@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "vibraphone": {
+      "command": "uv",
+      "args": ["run", "python", ".mcp/servers/vibraphone/server.py"],
+      "env": {
+        "VIBRAPHONE_CONFIG": "./vibraphone.yaml"
+      }
+    },
+    "stitch": {
+      "command": "npx",
+      "args": ["-y", "stitch-mcp"],
+      "env": {
+        "GOOGLE_CLOUD_PROJECT": "${STITCH_PROJECT_ID}"
+      },
+      "_comment": "Optional. Remove this entry if stitch.enabled is false in vibraphone.yaml."
+    }
+  }
+}

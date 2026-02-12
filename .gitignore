@@ -1,0 +1,37 @@
+# Vibraphone runtime state
+.vibraphone/
+
+# Beads database (JSONL is committed, SQLite is not)
+.beads/beads.db
+
+# Git worktrees
+worktrees/
+
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Implementation map (design artifact, not part of template)
+implementation_map.md
+
+# Markdown Linting
+.markdownlint.ignore

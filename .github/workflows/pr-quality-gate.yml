@@ -1,0 +1,13 @@
+# PR Quality Gate — mirrors local quality gate
+# Content will be added in Phase 10
+name: PR Quality Gate
+on:
+  pull_request:
+    branches: [main]
+jobs:
+  quality-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Placeholder
+        run: echo "Quality gate not yet configured"
