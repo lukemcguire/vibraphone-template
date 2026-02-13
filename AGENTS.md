@@ -29,6 +29,12 @@ Vibraphone MCP tools. The tools enforce the rules — you follow the tools.
 | `abandon_task`  | `task_id: str` | `{"abandoned": id, "status": "ready"}`                  | Resets task, removes worktree                     |
 | `health_check`  | —              | `{"br_doctor": ..., "cycles": [...], "orphans": [...]}` | Runs `br doctor` + cycle detection                |
 
+### Session Recovery Tools
+
+| Tool              | Inputs | Returns                                                                              | Notes                                                    |
+| ----------------- | ------ | ------------------------------------------------------------------------------------ | -------------------------------------------------------- |
+| `recover_session` | —      | `{"status": "clean"\|"active"\|"stale", "action": "none"\|"resume"\|"cleaned_up"}` | Detects stale sessions; resumes or cleans up automatically |
+
 ### Worktree / Git Tools
 
 | Tool          | Inputs         | Returns                               | Notes                                                                       |
@@ -117,7 +123,10 @@ stateDiagram-v2
 ## Context Loading on Startup
 
 1. Read `AGENTS.md` (this file).
-2. Read `.vibraphone/session.json` — if a task is active, resume it.
+2. Call `recover_session` tool.
+   - If `action: "resume"` → continue working on the returned task_id.
+   - If `action: "cleaned_up"` → stale state was cleared, proceed to `next_ready`.
+   - If `action: "none"` → no active task, proceed normally.
 3. Read `docs/ARCHITECTURE.md` for system context.
 4. Read `docs/CONSTITUTION.md` for coding rules.
 5. Read the relevant `.planning/phases/` spec for the current phase.
@@ -135,8 +144,8 @@ stateDiagram-v2
   `max_review_attempts`, the tool escalates automatically.
 - **Merge conflicts:** Call `abandon_task`, then `start_task` again (fresh
   worktree from latest main).
-- **Context reset:** Read `session.json` on startup to resume where you left
-  off.
+- **Context reset:** Call `recover_session` on startup. It checks session
+  staleness, verifies worktree and task status, and resumes or cleans up.
 
 <!-- bv-agent-instructions-v1 -->
 

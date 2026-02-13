@@ -16,6 +16,7 @@ from tools.beads_tools import (
 from tools.bridge_tools import import_gsd_plan
 from tools.quality_tools import attempt_commit, run_format, run_lint, run_tests
 from tools.review_tools import request_code_review
+from tools.session_tools import recover_session
 from tools.stack_tools import configure_stack
 from tools.worktree_tools import finish_task, start_task
 
@@ -35,6 +36,7 @@ for fn in [
     request_code_review,
     attempt_commit,
     import_gsd_plan,
+    recover_session,
     configure_stack,
 ]:
     mcp.add_tool(Tool.from_function(fn))

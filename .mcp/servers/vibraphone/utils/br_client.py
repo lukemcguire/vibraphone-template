@@ -48,6 +48,11 @@ async def br_ready() -> dict:
     return await br_run("ready")
 
 
+async def br_show(task_id: str) -> dict:
+    """Get details of a single task."""
+    return await br_run("show", task_id)
+
+
 async def br_close(task_id: str) -> dict:
     """Close (complete) a task."""
     return await br_run("close", task_id)
