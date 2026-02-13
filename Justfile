@@ -98,16 +98,8 @@ bootstrap:
 [group: 'setup']
 reset:
     @echo "Resetting template to blank slate..."
-    # Remove git worktrees
     git worktree list --porcelain | grep '^worktree' | grep '/worktrees/' | cut -d' ' -f2 | xargs -r -I{} git worktree remove --force {}
-    # Nuke all generated content
-    rm -rf .vibraphone/session.json .vibraphone/audit.log
-    rm -rf .beads/beads.db .beads/beads.db-shm .beads/beads.db-wal .beads/last-touched
-    rm -rf .beads/issues.jsonl .beads/metadata.json
-    rm -rf .planning/phases .planning/PROJECT.md .planning/REQUIREMENTS.md .planning/ROADMAP.md .planning/STATE.md .planning/config.json .planning/research
+    rm -rf .vibraphone/ .beads/ .planning/ worktrees/
     rm -rf src/* tests/unit/* tests/integration/*
-    rm -rf worktrees/*/
     rm -rf .venv __pycache__ .coverage htmlcov .ruff_cache node_modules
-    # Restore committed files to clean state
-    git checkout -- .beads/issues.jsonl .beads/metadata.json
     @echo "Done. Run 'just bootstrap' to reinitialize."
