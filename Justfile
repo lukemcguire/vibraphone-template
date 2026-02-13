@@ -102,4 +102,5 @@ reset:
     rm -rf .vibraphone/ .beads/ .planning/ worktrees/
     rm -rf src/* tests/unit/* tests/integration/*
     rm -rf .venv __pycache__ .coverage htmlcov .ruff_cache node_modules
+    git checkout -- .
     @echo "Done. Run 'just bootstrap' to reinitialize."
