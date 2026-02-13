@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from enum import IntEnum
 
 
 class BrError(Exception):
@@ -106,27 +107,31 @@ def detect_cycles(tasks: list[dict]) -> list[list[str]]:
         deps = [str(d) for d in (t.get("dependencies") or [])]
         adj[tid] = deps
 
-    WHITE, GRAY, BLACK = 0, 1, 2
-    color: dict[str, int] = dict.fromkeys(adj, WHITE)
+    class _Color(IntEnum):
+        WHITE = 0
+        GRAY = 1
+        BLACK = 2
+
+    color: dict[str, _Color] = dict.fromkeys(adj, _Color.WHITE)
     cycles: list[list[str]] = []
     path: list[str] = []
 
     def dfs(node: str) -> None:
-        color[node] = GRAY
+        color[node] = _Color.GRAY
         path.append(node)
         for neighbour in adj.get(node, []):
             if neighbour not in color:
                 continue
-            if color[neighbour] == GRAY:
+            if color[neighbour] == _Color.GRAY:
                 idx = path.index(neighbour)
-                cycles.append(path[idx:] + [neighbour])
-            elif color[neighbour] == WHITE:
+                cycles.append([*path[idx:], neighbour])
+            elif color[neighbour] == _Color.WHITE:
                 dfs(neighbour)
         path.pop()
-        color[node] = BLACK
+        color[node] = _Color.BLACK
 
     for node in list(adj):
-        if color[node] == WHITE:
+        if color[node] == _Color.WHITE:
             dfs(node)
 
     return cycles
@@ -141,9 +146,11 @@ def detect_orphans(tasks: list[dict]) -> list[dict]:
     orphans: list[dict] = []
     for t in tasks:
         tid = str(t.get("id", ""))
-        for dep in t.get("dependencies") or []:
-            if str(dep) not in known_ids:
-                orphans.append({"task_id": tid, "missing_dep": str(dep)})
+        orphans.extend(
+            {"task_id": tid, "missing_dep": str(dep)}
+            for dep in (t.get("dependencies") or [])
+            if str(dep) not in known_ids
+        )
     return orphans
 
 
