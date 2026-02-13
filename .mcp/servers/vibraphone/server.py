@@ -14,6 +14,7 @@ from tools.beads_tools import (
     next_ready,
 )
 from tools.quality_tools import attempt_commit, run_lint, run_tests
+from tools.bridge_tools import import_gsd_plan
 from tools.worktree_tools import finish_task, start_task
 
 mcp = FastMCP("vibraphone")
@@ -29,6 +30,7 @@ for fn in [
     run_tests,
     run_lint,
     attempt_commit,
+    import_gsd_plan,
 ]:
     mcp.add_tool(Tool.from_function(fn))
 

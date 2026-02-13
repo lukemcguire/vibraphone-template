@@ -61,6 +61,30 @@ async def br_update(task_id: str, **kwargs: str) -> dict:
     return await br_run(*args)
 
 
+async def br_create(
+    title: str,
+    description: str | None = None,
+    type_: str | None = None,
+    labels: str | None = None,
+) -> dict:
+    """Create a new Beads issue."""
+    args = ["create", title]
+    if description:
+        args.extend(["--description", description])
+    if type_:
+        args.extend(["--type", type_])
+    if labels:
+        args.extend(["--labels", labels])
+    return await br_run(*args)
+
+
+async def br_dep_add(
+    issue: str, depends_on: str, dep_type: str = "blocks"
+) -> dict:
+    """Add dependency: depends_on must complete before issue can start."""
+    return await br_run("dep", "add", issue, depends_on, "--type", dep_type)
+
+
 async def br_doctor() -> dict:
     """Run br doctor health check."""
     return await br_run("doctor")
