@@ -149,4 +149,3 @@ stateDiagram-v2
   worktree from latest main).
 - **Context reset:** Call `recover_session` on startup. It checks session
   staleness, verifies worktree and task status, and resumes or cleans up.
-
