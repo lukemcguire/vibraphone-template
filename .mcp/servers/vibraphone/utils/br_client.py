@@ -88,6 +88,60 @@ async def br_doctor() -> dict:
     return await br_run("doctor")
 
 
+def detect_cycles(tasks: list[dict]) -> list[list[str]]:
+    """Detect dependency cycles in a task list via DFS.
+
+    Each task dict should have an 'id' field and optionally a 'dependencies'
+    field (list of task IDs this task depends on).  Returns a list of cycles,
+    where each cycle is a list of task IDs forming the loop.
+    """
+    adj: dict[str, list[str]] = {}
+    for t in tasks:
+        tid = str(t.get("id", ""))
+        deps = [str(d) for d in (t.get("dependencies") or [])]
+        adj[tid] = deps
+
+    WHITE, GRAY, BLACK = 0, 1, 2
+    color: dict[str, int] = {tid: WHITE for tid in adj}
+    cycles: list[list[str]] = []
+    path: list[str] = []
+
+    def dfs(node: str) -> None:
+        color[node] = GRAY
+        path.append(node)
+        for neighbour in adj.get(node, []):
+            if neighbour not in color:
+                continue
+            if color[neighbour] == GRAY:
+                idx = path.index(neighbour)
+                cycles.append(path[idx:] + [neighbour])
+            elif color[neighbour] == WHITE:
+                dfs(neighbour)
+        path.pop()
+        color[node] = BLACK
+
+    for node in list(adj):
+        if color[node] == WHITE:
+            dfs(node)
+
+    return cycles
+
+
+def detect_orphans(tasks: list[dict]) -> list[dict]:
+    """Find tasks whose dependencies reference non-existent task IDs.
+
+    Returns a list of ``{"task_id": ..., "missing_dep": ...}`` dicts.
+    """
+    known_ids = {str(t.get("id", "")) for t in tasks}
+    orphans: list[dict] = []
+    for t in tasks:
+        tid = str(t.get("id", ""))
+        for dep in t.get("dependencies") or []:
+            if str(dep) not in known_ids:
+                orphans.append({"task_id": tid, "missing_dep": str(dep)})
+    return orphans
+
+
 async def br_sync() -> dict:
     """Run br sync --flush-only."""
     return await br_run("sync", "--flush-only")

@@ -230,6 +230,24 @@ async def request_code_review() -> dict:
     status = review_result["status"]
     issues = review_result["issues"]
 
+    # Aggregate issues from previous attempts (dedup by rule+file+line)
+    if attempt >= 2:
+        prev_state = session.load_session() or session.SessionState()
+        prev_issues = prev_state.last_review_issues or []
+
+        seen: set[tuple] = set()
+        merged: list[dict] = []
+        for issue in [*prev_issues, *issues]:
+            key = (
+                issue.get("rule", ""),
+                issue.get("file", ""),
+                issue.get("line", ""),
+            )
+            if key not in seen:
+                seen.add(key)
+                merged.append(issue)
+        issues = merged
+
     # Update session state
     state = session.load_session() or session.SessionState()
     state.last_review_status = status

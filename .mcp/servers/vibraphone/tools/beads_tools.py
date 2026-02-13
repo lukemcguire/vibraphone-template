@@ -39,7 +39,24 @@ async def abandon_task(task_id: str) -> dict:
 
 
 async def health_check() -> dict:
-    """Run br doctor to check Beads workspace health."""
-    result = await br_client.br_doctor()
+    """Run br doctor and analyse the task graph for cycles and orphans.
+
+    Returns structured JSON:
+        {"br_doctor": <raw doctor output>, "cycles": [...], "orphans": [...]}
+    """
+    doctor_result = await br_client.br_doctor()
+
+    # Fetch task list for graph analysis
+    tasks_result = await br_client.br_list()
+    tasks = tasks_result if isinstance(tasks_result, list) else tasks_result.get("tasks", [])
+
+    cycles = br_client.detect_cycles(tasks)
+    orphans = br_client.detect_orphans(tasks)
+
+    result = {
+        "br_doctor": doctor_result,
+        "cycles": cycles,
+        "orphans": orphans,
+    }
     session.audit_log("health_check", {}, "ok", result)
     return result
