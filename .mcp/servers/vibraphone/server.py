@@ -1,7 +1,36 @@
 """Vibraphone MCP Server — FastMCP entry point.
 
-Registers all Vibraphone tools and starts the MCP server.
-Implementation will be added in Phase 4.
+Registers all Vibraphone tools and starts the MCP server on stdio transport.
 """
 
-# TODO: Phase 4 — Initialize FastMCP app, register tool modules, start server
+from fastmcp import FastMCP
+from fastmcp.tools import Tool
+
+from tools.beads_tools import (
+    abandon_task,
+    complete_task,
+    health_check,
+    list_tasks,
+    next_ready,
+)
+from tools.quality_tools import attempt_commit, run_lint, run_tests
+from tools.worktree_tools import finish_task, start_task
+
+mcp = FastMCP("vibraphone")
+
+for fn in [
+    list_tasks,
+    next_ready,
+    complete_task,
+    abandon_task,
+    health_check,
+    start_task,
+    finish_task,
+    run_tests,
+    run_lint,
+    attempt_commit,
+]:
+    mcp.add_tool(Tool.from_function(fn))
+
+if __name__ == "__main__":
+    mcp.run()

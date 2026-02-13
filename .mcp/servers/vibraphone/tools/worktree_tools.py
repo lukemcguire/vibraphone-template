@@ -1,7 +1,59 @@
-"""Git worktree lifecycle tools — start, finish, abandon tasks.
+"""Git worktree lifecycle tools — start and finish tasks."""
 
-Tools: start_task, finish_task
-Implementation will be added in Phase 4.
-"""
+from __future__ import annotations
 
-# TODO: Phase 4 — Implement worktree creation/cleanup with session tracking
+import asyncio
+
+from config import config
+from utils import br_client, session
+
+
+async def _run_just(*args: str) -> str:
+    """Run a just recipe and return stdout."""
+    proc = await asyncio.create_subprocess_exec(
+        "just", *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"just {' '.join(args)} failed (rc={proc.returncode}): "
+            f"{stderr.decode().strip()}"
+        )
+    return stdout.decode().strip()
+
+
+async def start_task(task_id: str) -> dict:
+    """Create a worktree and branch for a task, mark it in-progress."""
+    await br_client.br_update(task_id, status="in_progress")
+    await _run_just("start-task", task_id)
+
+    worktree_path = f"./worktrees/{task_id}"
+    branch = f"{config.worktree.prefix}{task_id}"
+
+    state = session.load_session() or session.SessionState()
+    state.active_task = task_id
+    state.worktree = worktree_path
+    state.phase = "working"
+    session.save_session(state)
+
+    result = {"worktree": worktree_path, "branch": branch}
+    session.audit_log("start_task", {"task_id": task_id}, "ok", result)
+    return result
+
+
+async def finish_task(task_id: str) -> dict:
+    """Push the task branch and optionally clean up the worktree."""
+    await _run_just("finish-task", task_id)
+
+    branch = f"{config.worktree.prefix}{task_id}"
+    cleaned = False
+
+    if config.worktree.auto_cleanup:
+        await _run_just("cleanup-task", task_id)
+        cleaned = True
+
+    result = {"pushed": branch, "cleaned": cleaned}
+    session.audit_log("finish_task", {"task_id": task_id}, "ok", result)
+    return result
