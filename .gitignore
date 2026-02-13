@@ -46,3 +46,7 @@ implementation_map.md
 
 # bv (beads viewer) local config and caches
 .bv/
+
+# Coding agents
+.agents/
+.claude/

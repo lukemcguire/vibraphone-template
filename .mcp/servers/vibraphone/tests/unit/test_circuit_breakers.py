@@ -253,6 +253,50 @@ class TestAttemptCommit:
         assert result["status"] == "rejected"
         assert "diff changed" in result["reason"]
 
+    @pytest.mark.asyncio
+    async def test_succeeds_when_approved_and_checks_pass(self, set_active_task, mock_run_shell):
+        set_active_task("T-1")
+        review_hash = "abc123"
+
+        state = session.load_session()
+        state.last_review_status = "APPROVED"
+        state.last_review_diff_hash = review_hash
+        session.save_session(state)
+
+        mock_run_shell.return_value = (0, "All checks passed")
+
+        mock_proc = AsyncMock()
+        mock_proc.communicate.return_value = (b"[main abc123] feat: test\n", b"")
+        mock_proc.returncode = 0
+
+        with (
+            patch("tools.quality_tools._git_diff_staged_hash", new_callable=AsyncMock, return_value=review_hash),
+            patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_proc),
+        ):
+            from tools.quality_tools import attempt_commit
+            result = await attempt_commit("feat: add feature")
+
+        assert result["status"] == "committed"
+
+    @pytest.mark.asyncio
+    async def test_rejects_when_quality_gate_fails(self, set_active_task, mock_run_shell):
+        set_active_task("T-1")
+        review_hash = "abc123"
+
+        state = session.load_session()
+        state.last_review_status = "APPROVED"
+        state.last_review_diff_hash = review_hash
+        session.save_session(state)
+
+        mock_run_shell.return_value = (1, "lint failed")
+
+        with patch("tools.quality_tools._git_diff_staged_hash", new_callable=AsyncMock, return_value=review_hash):
+            from tools.quality_tools import attempt_commit
+            result = await attempt_commit("feat: add feature")
+
+        assert result["status"] == "rejected"
+        assert "Quality gate failed" in result["reason"]
+
 
 # ── health_check structured return ───────────────────────────────────
 
