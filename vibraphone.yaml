@@ -16,9 +16,9 @@ quality_gate:
   require_tests: true
   require_lint: true
   require_review: true
-  review_severity_threshold: error      # "error" = only errors block | "warning" = warnings also block
-  max_test_attempts: 5                  # Circuit breaker for stuck tests
-  max_review_attempts: 3                # Circuit breaker for review loops
+  review_severity_threshold: error # "error" = only errors block | "warning" = warnings also block
+  max_test_attempts: 5 # Circuit breaker for stuck tests
+  max_review_attempts: 3 # Circuit breaker for review loops
 
 worktree:
   base_branch: main
@@ -26,14 +26,14 @@ worktree:
   auto_cleanup: false
 
 review:
-  model: claude-sonnet-4-5-20250929
+  model: minimax/minimax-m2.5
   prompt_file: ./docs/prompts/reviewer.md
   constitution_file: ./docs/CONSTITUTION.md
 
 beads:
-  use_bv: false                         # Enable bv --robot-triage for graph-aware task prioritization
-  auto_sync: true                       # Auto-run br sync --flush-only after task state changes
+  use_bv: false # Enable bv --robot-triage for graph-aware task prioritization
+  auto_sync: true # Auto-run br sync --flush-only after task state changes
 
 stitch:
-  enabled: false                        # Enable Google Stitch MCP for UI generation
-  project_id: ${STITCH_PROJECT_ID}      # Resolved from .env
+  enabled: false # Enable Google Stitch MCP for UI generation
+  project_id: ${STITCH_PROJECT_ID} # Resolved from .env

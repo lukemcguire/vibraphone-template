@@ -35,3 +35,6 @@ implementation_map.md
 
 # Markdown Linting
 .markdownlint.ignore
+
+# bv (beads viewer) local config and caches
+.bv/

@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Vibraphone MCP server — tool-enforced development workflow"
 requires-python = ">=3.11"
 dependencies = [
+    "openai>=1.0.0",
     "fastmcp>=0.1.0",
     "pyyaml>=6.0",
 ]

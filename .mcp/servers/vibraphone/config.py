@@ -37,7 +37,7 @@ class WorktreeConfig:
 
 @dataclass
 class ReviewConfig:
-    model: str = "claude-sonnet-4-5-20250929"
+    model: str = "anthropic/claude-sonnet-4-5-20250929"
     prompt_file: str = "./docs/prompts/reviewer.md"
     constitution_file: str = "./docs/CONSTITUTION.md"
 
