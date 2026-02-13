@@ -1,58 +1,87 @@
 set shell := ["bash", "-c"]
 set dotenv-load := true
 
-# ─── Quality Gate (stubs — run configure_stack to generate) ───
+# Run lint + test
+[group: 'quality-gate']
 check:
     @echo "Error: Run configure_stack to set up quality recipes." && exit 1
 
+# Run all tests
+[group: 'quality-gate']
 test *ARGS:
     @echo "Error: Run configure_stack to set up quality recipes." && exit 1
 
+# Run all linters
+[group: 'quality-gate']
 lint:
     @echo "Error: Run configure_stack to set up quality recipes." && exit 1
 
+# Run all formatters
+[group: 'quality-gate']
 format:
     @echo "Error: Run configure_stack to set up quality recipes." && exit 1
 
-# ─── Git Worktrees ─────────────────────────────────
+# Run standalone code review on files
+[group: 'quality-gate']
+review *FILES:
+    uv run python scripts/review.py {{FILES}}
+
+# Create worktree for a task
+[group: 'worktree']
 start-task id:
     @echo "Creating worktree for {{id}}..."
     git fetch origin main
     git worktree add -b feat/{{id}} ./worktrees/{{id}} origin/main
     @echo "Worktree ready at ./worktrees/{{id}}"
 
+# Run quality gate and push task branch
+[group: 'worktree']
 finish-task id:
     @echo "Finishing task {{id}}..."
     just check
     cd ./worktrees/{{id}} && git push origin feat/{{id}}
     @echo "Pushed feat/{{id}}"
 
+# Remove worktree and branch for a task
+[group: 'worktree']
 cleanup-task id:
     @echo "Removing worktree for {{id}}..."
     git worktree remove ./worktrees/{{id}} --force
     git branch -D feat/{{id}} 2>/dev/null || true
 
+# List active worktrees
+[group: 'worktree']
 list-worktrees:
     git worktree list
 
-# ─── Beads ─────────────────────────────────────────
+# Initialize beads database
+[group: 'beads']
 beads-init:
     br init
     @echo "Beads initialized."
 
+# Show all tasks as JSON
+[group: 'beads']
 beads-status:
     br list --json
 
+# Show unblocked tasks as JSON
+[group: 'beads']
 beads-ready:
     br ready --json
 
+# Flush beads sync queue
+[group: 'beads']
 beads-sync:
     br sync --flush-only
 
+# Add a task interactively
+[group: 'beads']
 add-task:
     uv run python scripts/add_task.py
 
-# ─── Bootstrap ─────────────────────────────────────
+# Set up project from scratch
+[group: 'setup']
 bootstrap:
     @echo "Bootstrapping Vibraphone project..."
     @echo "Checking prerequisites..."
@@ -65,6 +94,20 @@ bootstrap:
     mkdir -p .vibraphone worktrees
     @echo "Ready. Run /gsd:new-project to start planning."
 
-# ─── Review (standalone, for CI) ───────────────────
-review *FILES:
-    uv run python scripts/review.py {{FILES}}
+# Reset template to blank slate (testing only — remove before shipping)
+[group: 'setup']
+reset:
+    @echo "Resetting template to blank slate..."
+    # Remove git worktrees
+    git worktree list --porcelain | grep '^worktree' | grep '/worktrees/' | cut -d' ' -f2 | xargs -r -I{} git worktree remove --force {}
+    # Nuke all generated content
+    rm -rf .vibraphone/session.json .vibraphone/audit.log
+    rm -rf .beads/beads.db .beads/beads.db-shm .beads/beads.db-wal .beads/last-touched
+    rm -rf .beads/issues.jsonl .beads/metadata.json
+    rm -rf .planning/phases .planning/PROJECT.md .planning/REQUIREMENTS.md .planning/ROADMAP.md .planning/STATE.md .planning/config.json .planning/research
+    rm -rf src/* tests/unit/* tests/integration/*
+    rm -rf worktrees/*/
+    rm -rf .venv __pycache__ .coverage htmlcov .ruff_cache node_modules
+    # Restore committed files to clean state
+    git checkout -- .beads/issues.jsonl .beads/metadata.json
+    @echo "Done. Run 'just bootstrap' to reinitialize."
