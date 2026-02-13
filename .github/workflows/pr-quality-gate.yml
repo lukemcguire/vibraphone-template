@@ -1,5 +1,6 @@
 # PR Quality Gate — mirrors local `just check` (lint + test)
 # LLM-based code review is local-only; CI is deterministic gates only.
+# Runs on every PR targeting main.
 name: PR Quality Gate
 
 on:
