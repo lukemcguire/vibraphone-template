@@ -8,12 +8,20 @@ check: lint test
 # ─── Testing ──────────────────────────────────────
 test *ARGS:
     @echo "Running tests..."
-    cd src && uv run pytest --tb=short {{ARGS}}
+    uv run pytest {{ARGS}}
 
 # ─── Linting ──────────────────────────────────────
 lint:
     @echo "Linting..."
-    cd src && uv run ruff check .
+    uv run ruff check .
+    uv run ruff format --check .
+    uv run ty check src/ .mcp/servers/vibraphone/ scripts/
+
+# ─── Formatting ───────────────────────────────────
+format:
+    @echo "Formatting..."
+    uv run ruff check --fix .
+    uv run ruff format .
 
 # ─── Git Worktrees ─────────────────────────────────
 start-task id:

@@ -17,6 +17,14 @@ __pycache__/
 .venv/
 *.egg-info/
 
+# Testing / Coverage
+.coverage
+htmlcov/
+
+# Linting / Type Checking
+.ruff_cache/
+.ty/
+
 # Node
 node_modules/
 

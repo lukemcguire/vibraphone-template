@@ -9,7 +9,7 @@ components:
     language: python
     root: ./src
     test_command: "pytest --tb=short"
-    lint_command: "ruff check ."
+    lint_command: "ruff check . && ruff format --check ."
     coverage_threshold: 80
 
 quality_gate:

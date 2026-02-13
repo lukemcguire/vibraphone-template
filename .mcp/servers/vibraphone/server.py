@@ -5,7 +5,6 @@ Registers all Vibraphone tools and starts the MCP server on stdio transport.
 
 from fastmcp import FastMCP
 from fastmcp.tools import Tool
-
 from tools.beads_tools import (
     abandon_task,
     complete_task,
@@ -13,9 +12,9 @@ from tools.beads_tools import (
     list_tasks,
     next_ready,
 )
+from tools.bridge_tools import import_gsd_plan
 from tools.quality_tools import attempt_commit, run_lint, run_tests
 from tools.review_tools import request_code_review
-from tools.bridge_tools import import_gsd_plan
 from tools.worktree_tools import finish_task, start_task
 
 mcp = FastMCP("vibraphone")

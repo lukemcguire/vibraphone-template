@@ -9,11 +9,10 @@ Beads issues with the correct dependency graph for execution.
 from __future__ import annotations
 
 import re
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import yaml
-
+from defusedxml.ElementTree import fromstring as parse_xml
 from utils import br_client, session
 
 # ---------------------------------------------------------------------------
@@ -43,7 +42,7 @@ def _extract_tasks_from_xml(body: str) -> list[dict]:
         return []
 
     xml_str = f"<tasks>{match.group(1)}</tasks>"
-    root = ET.fromstring(xml_str)
+    root = parse_xml(xml_str)
 
     tasks = []
     for task_el in root.findall("task"):
@@ -64,9 +63,7 @@ def _detect_new_components(body: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-async def _create_beads_task(
-    plan_id: str, task_idx: int, task_data: dict
-) -> str:
+async def _create_beads_task(plan_id: str, task_idx: int, task_data: dict) -> str:
     """Create a single Beads issue from a parsed task element.
 
     Returns the Beads issue ID.
@@ -77,9 +74,7 @@ async def _create_beads_task(
     labels = task_data.get("labels", f"plan:{plan_id}")
     type_ = task_data.get("type", "task")
 
-    result = await br_client.br_create(
-        title, description=description or None, type_=type_, labels=labels
-    )
+    result = await br_client.br_create(title, description=description or None, type_=type_, labels=labels)
     return str(result.get("id", result.get("issue_id", "")))
 
 
@@ -106,9 +101,7 @@ async def _setup_plan_dependencies(
             blocked = task_ids[i]
             blocker = task_ids[i - 1]
             await br_client.br_dep_add(blocked, blocker)
-            deps_created.append(
-                {"blocked": blocked, "blocker": blocker, "type": "intra-plan"}
-            )
+            deps_created.append({"blocked": blocked, "blocker": blocker, "type": "intra-plan"})
 
         # Inter-plan: first task of this plan blocked by last task of each dep
         if plan_id in plan_deps and task_ids:
@@ -192,16 +185,12 @@ async def import_gsd_plan(phase_number: int) -> dict:
         for idx, task_data in enumerate(parsed_tasks):
             issue_id = await _create_beads_task(plan_id, idx, task_data)
             issue_ids.append(issue_id)
-            tasks_created.append(
-                {"plan_id": plan_id, "task_index": idx, "issue_id": issue_id}
-            )
+            tasks_created.append({"plan_id": plan_id, "task_index": idx, "issue_id": issue_id})
 
         plan_tasks[plan_id] = issue_ids
 
     # --- Pass 2: Wire up all dependencies ---
-    dependencies = await _setup_plan_dependencies(
-        plan_tasks, plan_deps, plan_tasks
-    )
+    dependencies = await _setup_plan_dependencies(plan_tasks, plan_deps, plan_tasks)
 
     result = {
         "tasks_created": tasks_created,

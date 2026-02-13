@@ -9,7 +9,7 @@ import json
 class BrError(Exception):
     """Raised when br CLI returns a non-zero exit code."""
 
-    def __init__(self, returncode: int, stderr: str, args: tuple[str, ...]):
+    def __init__(self, returncode: int, stderr: str, args: tuple[str, ...]) -> None:
         self.returncode = returncode
         self.stderr = stderr
         self.args_used = args
@@ -26,7 +26,7 @@ async def br_run(*args: str) -> dict:
     )
     stdout, stderr = await proc.communicate()
 
-    if proc.returncode != 0:
+    if proc.returncode:
         raise BrError(proc.returncode, stderr.decode().strip(), args)
 
     text = stdout.decode().strip()
@@ -78,9 +78,7 @@ async def br_create(
     return await br_run(*args)
 
 
-async def br_dep_add(
-    issue: str, depends_on: str, dep_type: str = "blocks"
-) -> dict:
+async def br_dep_add(issue: str, depends_on: str, dep_type: str = "blocks") -> dict:
     """Add dependency: depends_on must complete before issue can start."""
     return await br_run("dep", "add", issue, depends_on, "--type", dep_type)
 

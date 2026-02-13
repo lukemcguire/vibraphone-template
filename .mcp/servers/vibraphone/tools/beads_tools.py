@@ -6,10 +6,10 @@ from config import config
 from utils import br_client, session
 
 
-async def list_tasks(filter: str | None = None) -> dict:
+async def list_tasks(status_filter: str | None = None) -> dict:
     """List all Beads tasks, optionally filtered by status or label."""
-    result = await br_client.br_list(filter)
-    session.audit_log("list_tasks", {"filter": filter}, "ok", result)
+    result = await br_client.br_list(status_filter)
+    session.audit_log("list_tasks", {"filter": status_filter}, "ok", result)
     return result
 
 

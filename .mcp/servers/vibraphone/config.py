@@ -11,6 +11,8 @@ import yaml
 
 @dataclass
 class ComponentConfig:
+    """Per-component build and quality settings (language, test/lint commands)."""
+
     language: str = "python"
     root: str = "./src"
     test_command: str = "pytest --tb=short"
@@ -20,6 +22,8 @@ class ComponentConfig:
 
 @dataclass
 class QualityGateConfig:
+    """Thresholds and circuit-breaker limits for the quality gate."""
+
     require_tests: bool = True
     require_lint: bool = True
     require_review: bool = True
@@ -30,6 +34,8 @@ class QualityGateConfig:
 
 @dataclass
 class WorktreeConfig:
+    """Git worktree lifecycle settings (base branch, naming prefix)."""
+
     base_branch: str = "main"
     prefix: str = "feat/"
     auto_cleanup: bool = False
@@ -37,6 +43,8 @@ class WorktreeConfig:
 
 @dataclass
 class ReviewConfig:
+    """LLM code-review settings (model, prompt file, constitution file)."""
+
     model: str = "anthropic/claude-sonnet-4-5-20250929"
     prompt_file: str = "./docs/prompts/reviewer.md"
     constitution_file: str = "./docs/CONSTITUTION.md"
@@ -44,24 +52,32 @@ class ReviewConfig:
 
 @dataclass
 class BeadsConfig:
+    """Beads task tracker integration toggles."""
+
     use_bv: bool = False
     auto_sync: bool = True
 
 
 @dataclass
 class StitchConfig:
+    """Google Stitch MCP integration settings."""
+
     enabled: bool = False
     project_id: str = ""
 
 
 @dataclass
 class ProjectConfig:
+    """Top-level project identity (name and version)."""
+
     name: str = "my-app"
     version: str = "0.1.0"
 
 
 @dataclass
 class VibraphoneConfig:
+    """Root configuration parsed from vibraphone.yaml."""
+
     project: ProjectConfig = field(default_factory=ProjectConfig)
     components: dict[str, ComponentConfig] = field(default_factory=dict)
     quality_gate: QualityGateConfig = field(default_factory=QualityGateConfig)
@@ -126,7 +142,7 @@ def load_config(path: str | Path | None = None) -> VibraphoneConfig:
     if not path.exists():
         return VibraphoneConfig()
 
-    with open(path) as f:
+    with Path(path).open() as f:
         raw = yaml.safe_load(f) or {}
 
     return _build_config(raw)

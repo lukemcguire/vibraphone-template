@@ -11,16 +11,17 @@ import json
 import os
 from pathlib import Path
 
-from openai import AsyncOpenAI
-
 from config import config
+from openai import AsyncOpenAI
 from utils import br_client, session
 
 
 async def _git_diff_staged() -> str:
     """Return the text of the current staged diff."""
     proc = await asyncio.create_subprocess_exec(
-        "git", "diff", "--staged",
+        "git",
+        "diff",
+        "--staged",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -31,7 +32,9 @@ async def _git_diff_staged() -> str:
 async def _git_diff_staged_hash() -> str:
     """Return a SHA-256 hash of the current staged diff."""
     proc = await asyncio.create_subprocess_exec(
-        "git", "diff", "--staged",
+        "git",
+        "diff",
+        "--staged",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -42,7 +45,10 @@ async def _git_diff_staged_hash() -> str:
 async def _get_changed_files() -> list[str]:
     """Return list of staged file paths."""
     proc = await asyncio.create_subprocess_exec(
-        "git", "diff", "--staged", "--name-only",
+        "git",
+        "diff",
+        "--staged",
+        "--name-only",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -92,7 +98,7 @@ async def _perform_review(
         ],
     )
 
-    raw_text = response.choices[0].message.content.strip()
+    raw_text = (response.choices[0].message.content or "").strip()
 
     # Parse JSON response — handle markdown code fences
     json_text = raw_text
@@ -108,8 +114,9 @@ async def _perform_review(
     try:
         issues = json.loads(json_text)
         if not isinstance(issues, list):
-            raise ValueError("Response is not a JSON array")
-    except (json.JSONDecodeError, ValueError):
+            msg = "Response is not a JSON array"
+            raise TypeError(msg)  # noqa: TRY301
+    except (json.JSONDecodeError, TypeError):
         return {
             "status": "ESCALATED",
             "issues": [],
@@ -123,9 +130,7 @@ async def _perform_review(
     if threshold == "warning":
         dominated_severities.add("warning")
 
-    has_blocking = any(
-        issue.get("severity") in dominated_severities for issue in issues
-    )
+    has_blocking = any(issue.get("severity") in dominated_severities for issue in issues)
     status = "REJECTED" if has_blocking else "APPROVED"
 
     return {"status": status, "issues": issues, "raw_response": raw_text}

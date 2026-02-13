@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 SESSION_DIR = Path(".vibraphone")
@@ -14,6 +14,8 @@ AUDIT_LOG = SESSION_DIR / "audit.log"
 
 @dataclass
 class SessionState:
+    """Persisted session state for crash recovery and quality-gate tracking."""
+
     active_task: str | None = None
     phase: str | None = None
     worktree: str | None = None
@@ -82,7 +84,7 @@ def audit_log(tool: str, inputs: dict, status: str, output: dict) -> None:
     automatically keeps last_action / last_action_result / last_action_time
     current for crash recovery.
     """
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     # Update session state
     state = load_session() or SessionState()
@@ -100,5 +102,5 @@ def audit_log(tool: str, inputs: dict, status: str, output: dict) -> None:
         "status": status,
         "output": output,
     }
-    with open(AUDIT_LOG, "a") as f:
+    with AUDIT_LOG.open("a") as f:
         f.write(json.dumps(entry) + "\n")

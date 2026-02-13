@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -23,13 +24,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / ".mcp" / "server
 from config import load_config
 from tools.review_tools import _perform_review
 
+_GIT = shutil.which("git") or "git"
+
 
 def _git_diff_staged() -> str:
     """Get staged diff text (synchronous for CLI use)."""
     result = subprocess.run(
-        ["git", "diff", "--staged"],
+        [_GIT, "diff", "--staged"],
         capture_output=True,
         text=True,
+        check=False,
     )
     return result.stdout
 
@@ -37,9 +41,10 @@ def _git_diff_staged() -> str:
 def _get_changed_files() -> list[str]:
     """Get list of staged file paths (synchronous for CLI use)."""
     result = subprocess.run(
-        ["git", "diff", "--staged", "--name-only"],
+        [_GIT, "diff", "--staged", "--name-only"],
         capture_output=True,
         text=True,
+        check=False,
     )
     return [f for f in result.stdout.strip().splitlines() if f]
 
@@ -74,10 +79,7 @@ async def main() -> int:
         return 2
 
     # Get changed files — use CLI args if provided, otherwise staged files
-    if len(sys.argv) > 1:
-        changed_files = sys.argv[1:]
-    else:
-        changed_files = _get_changed_files()
+    changed_files = sys.argv[1:] if len(sys.argv) > 1 else _get_changed_files()
 
     files_content = _read_file_contents(changed_files)
 
@@ -115,10 +117,9 @@ async def main() -> int:
 
     if result["status"] == "APPROVED":
         return 0
-    elif result["status"] == "REJECTED":
+    if result["status"] == "REJECTED":
         return 1
-    else:
-        return 2
+    return 2
 
 
 if __name__ == "__main__":

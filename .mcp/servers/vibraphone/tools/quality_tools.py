@@ -17,13 +17,15 @@ async def _run_shell(cmd: str) -> tuple[int, str]:
         stderr=asyncio.subprocess.STDOUT,
     )
     stdout, _ = await proc.communicate()
-    return proc.returncode, stdout.decode().strip()
+    return proc.returncode or 0, stdout.decode().strip()
 
 
 async def _git_diff_staged_hash() -> str:
     """Return a SHA-256 hash of the current staged diff."""
     proc = await asyncio.create_subprocess_exec(
-        "git", "diff", "--staged",
+        "git",
+        "diff",
+        "--staged",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -70,9 +72,7 @@ async def run_lint(component: str | None = None) -> dict:
 
     issues = []
     if rc != 0:
-        for line in output.splitlines():
-            if line.strip():
-                issues.append(line.strip())
+        issues.extend(line.strip() for line in output.splitlines() if line.strip())
 
     result = {"status": status, "issues": issues}
     session.audit_log("run_lint", {"component": component}, status, result)
@@ -105,11 +105,14 @@ async def attempt_commit(message: str) -> dict:
 
     # All checks passed — commit
     proc = await asyncio.create_subprocess_exec(
-        "git", "commit", "-m", message,
+        "git",
+        "commit",
+        "-m",
+        message,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, stderr = await proc.communicate()
+    _stdout, stderr = await proc.communicate()
 
     if proc.returncode != 0:
         result = {"status": "rejected", "reason": f"git commit failed: {stderr.decode().strip()}"}

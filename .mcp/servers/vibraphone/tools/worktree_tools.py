@@ -11,16 +11,15 @@ from utils import br_client, session
 async def _run_just(*args: str) -> str:
     """Run a just recipe and return stdout."""
     proc = await asyncio.create_subprocess_exec(
-        "just", *args,
+        "just",
+        *args,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
     stdout, stderr = await proc.communicate()
     if proc.returncode != 0:
-        raise RuntimeError(
-            f"just {' '.join(args)} failed (rc={proc.returncode}): "
-            f"{stderr.decode().strip()}"
-        )
+        msg = f"just {' '.join(args)} failed (rc={proc.returncode}): {stderr.decode().strip()}"
+        raise RuntimeError(msg)
     return stdout.decode().strip()
 
 
