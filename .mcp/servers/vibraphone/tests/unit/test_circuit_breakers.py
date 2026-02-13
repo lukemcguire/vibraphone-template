@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import hashlib
-import json
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from utils import br_client, session
 from utils.br_client import detect_cycles, detect_orphans
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────
 
@@ -24,8 +21,8 @@ def _isolate_session(tmp_path, monkeypatch):
     monkeypatch.setattr(session, "AUDIT_LOG", tmp_path / "audit.log")
 
 
-@pytest.fixture()
-def _set_active_task():
+@pytest.fixture
+def set_active_task():
     """Helper to write a session with an active task."""
     def _inner(task_id="T-1"):
         state = session.SessionState(active_task=task_id)
@@ -33,14 +30,14 @@ def _set_active_task():
     return _inner
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_br_update():
     with patch.object(br_client, "br_update", new_callable=AsyncMock) as m:
         m.return_value = {}
         yield m
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_run_shell():
     with patch("tools.quality_tools._run_shell", new_callable=AsyncMock) as m:
         yield m
@@ -70,11 +67,11 @@ class TestSessionCounters:
 
 class TestRunTestsCircuitBreaker:
     @pytest.mark.asyncio
-    async def test_escalates_after_max_attempts(self, _set_active_task, mock_br_update, mock_run_shell, monkeypatch):
+    async def test_escalates_after_max_attempts(self, set_active_task, mock_br_update, mock_run_shell, monkeypatch):
         from config import config
         monkeypatch.setattr(config.quality_gate, "max_test_attempts", 2)
 
-        _set_active_task("T-1")
+        set_active_task("T-1")
         mock_run_shell.return_value = (1, "FAILED")
 
         from tools.quality_tools import run_tests
@@ -95,11 +92,11 @@ class TestRunTestsCircuitBreaker:
         mock_br_update.assert_called_with("T-1", status="blocked")
 
     @pytest.mark.asyncio
-    async def test_sets_task_blocked(self, _set_active_task, mock_br_update, mock_run_shell, monkeypatch):
+    async def test_sets_task_blocked(self, set_active_task, mock_br_update, mock_run_shell, monkeypatch):
         from config import config
         monkeypatch.setattr(config.quality_gate, "max_test_attempts", 1)
 
-        _set_active_task("T-1")
+        set_active_task("T-1")
         mock_run_shell.return_value = (1, "FAILED")
 
         from tools.quality_tools import run_tests
@@ -115,11 +112,11 @@ class TestRunTestsCircuitBreaker:
 
 class TestRequestCodeReviewCircuitBreaker:
     @pytest.mark.asyncio
-    async def test_escalates_after_max_review_attempts(self, _set_active_task, mock_br_update, monkeypatch):
+    async def test_escalates_after_max_review_attempts(self, set_active_task, mock_br_update, monkeypatch):
         from config import config
         monkeypatch.setattr(config.quality_gate, "max_review_attempts", 2)
 
-        _set_active_task("T-1")
+        set_active_task("T-1")
 
         from tools.review_tools import request_code_review
 
@@ -139,8 +136,8 @@ class TestRequestCodeReviewCircuitBreaker:
 
 class TestReviewIssueAggregation:
     @pytest.mark.asyncio
-    async def test_merges_previous_and_current_issues(self, _set_active_task, monkeypatch):
-        _set_active_task("T-1")
+    async def test_merges_previous_and_current_issues(self, set_active_task, monkeypatch):
+        set_active_task("T-1")
 
         # Seed session with issues from a prior review
         state = session.load_session()
@@ -173,7 +170,7 @@ class TestReviewIssueAggregation:
                 "issues": new_issues,
                 "raw_response": "[]",
             }),
-            patch("tools.review_tools.Path") as MockPath,
+            patch("tools.review_tools.Path") as mock_path,
         ):
             # Make constitution and prompt files appear to exist
             mock_constitution = MagicMock()
@@ -184,7 +181,7 @@ class TestReviewIssueAggregation:
             mock_prompt.exists.return_value = True
             mock_prompt.read_text.return_value = "# Prompt"
 
-            MockPath.side_effect = lambda p: mock_constitution if "CONSTITUTION" in str(p) else mock_prompt
+            mock_path.side_effect = lambda p: mock_constitution if "CONSTITUTION" in str(p) else mock_prompt
 
             from tools.review_tools import request_code_review
             result = await request_code_review()
@@ -195,8 +192,8 @@ class TestReviewIssueAggregation:
         assert rules == {"no-unused-vars", "no-print"}
 
     @pytest.mark.asyncio
-    async def test_no_aggregation_on_first_attempt(self, _set_active_task, monkeypatch):
-        _set_active_task("T-1")
+    async def test_no_aggregation_on_first_attempt(self, set_active_task, monkeypatch):
+        set_active_task("T-1")
 
         diff_text = "diff --git a/foo.py b/foo.py\n+print('hi')"
         diff_hash = hashlib.sha256(diff_text.encode()).hexdigest()
@@ -216,12 +213,12 @@ class TestReviewIssueAggregation:
                 "issues": current_issues,
                 "raw_response": "[]",
             }),
-            patch("tools.review_tools.Path") as MockPath,
+            patch("tools.review_tools.Path") as mock_path,
         ):
             mock_file = MagicMock()
             mock_file.exists.return_value = True
             mock_file.read_text.return_value = "# content"
-            MockPath.side_effect = lambda p: mock_file
+            mock_path.side_effect = lambda _p: mock_file
 
             from tools.review_tools import request_code_review
             result = await request_code_review()
@@ -242,8 +239,8 @@ class TestAttemptCommit:
         assert "No approved review" in result["reason"]
 
     @pytest.mark.asyncio
-    async def test_rejects_when_diff_changed(self, _set_active_task):
-        _set_active_task("T-1")
+    async def test_rejects_when_diff_changed(self, set_active_task):
+        set_active_task("T-1")
         state = session.load_session()
         state.last_review_status = "APPROVED"
         state.last_review_diff_hash = "stale-hash"

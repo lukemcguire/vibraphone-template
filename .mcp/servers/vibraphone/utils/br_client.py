@@ -102,7 +102,7 @@ def detect_cycles(tasks: list[dict]) -> list[list[str]]:
         adj[tid] = deps
 
     WHITE, GRAY, BLACK = 0, 1, 2
-    color: dict[str, int] = {tid: WHITE for tid in adj}
+    color: dict[str, int] = dict.fromkeys(adj, WHITE)
     cycles: list[list[str]] = []
     path: list[str] = []
 

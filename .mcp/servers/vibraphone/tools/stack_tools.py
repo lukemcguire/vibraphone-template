@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from config import _find_config_file, reload_config
+
+STITCH_MCP_ENTRY = {
+    "command": "npx",
+    "args": ["-y", "stitch-mcp"],
+    "env": {"GOOGLE_CLOUD_PROJECT": "${STITCH_PROJECT_ID}"},
+    "_comment": "Optional. Remove this entry if stitch.enabled is false in vibraphone.yaml.",
+}
 
 STACK_DEFAULTS: dict[str, dict[str, str]] = {
     "python": {
@@ -26,6 +34,66 @@ STACK_DEFAULTS: dict[str, dict[str, str]] = {
         "format_command": "gofmt -w .",
     },
 }
+
+
+def _sync_mcp_config(*, stitch_enabled: bool, project_root: Path) -> dict:
+    """Add or remove the stitch entry in .mcp/config.json based on stitch_enabled."""
+    config_path = project_root / ".mcp" / "config.json"
+    with config_path.open() as f:
+        config = json.load(f)
+
+    servers = config.setdefault("mcpServers", {})
+    has_stitch = "stitch" in servers
+    changed = False
+
+    if stitch_enabled and not has_stitch:
+        servers["stitch"] = STITCH_MCP_ENTRY
+        changed = True
+    elif not stitch_enabled and has_stitch:
+        del servers["stitch"]
+        changed = True
+
+    if changed:
+        with config_path.open("w") as f:
+            json.dump(config, f, indent=2)
+            f.write("\n")
+
+    return {
+        "stitch_config_changed": changed,
+        "stitch_enabled": stitch_enabled,
+        "mcp_config_path": str(config_path),
+    }
+
+
+def _update_env_var(key: str, value: str, project_root: Path) -> bool:
+    """Update or append a key=value pair in .env, creating from .env.example if needed."""
+    env_path = project_root / ".env"
+    if not env_path.exists():
+        example_path = project_root / ".env.example"
+        if example_path.exists():
+            env_path.write_text(example_path.read_text())
+        else:
+            env_path.write_text("")
+
+    lines = env_path.read_text().splitlines()
+    found = False
+    new_lines = []
+    for line in lines:
+        if line.startswith((f"{key}=", f"{key} =")):
+            new_lines.append(f"{key}={value}")
+            found = True
+        else:
+            new_lines.append(line)
+
+    if not found:
+        new_lines.append(f"{key}={value}")
+
+    new_content = "\n".join(new_lines) + "\n"
+    old_content = env_path.read_text()
+    if new_content != old_content:
+        env_path.write_text(new_content)
+        return True
+    return False
 
 
 def _render_component_recipes(name: str, root: str, commands: dict[str, str]) -> str:
@@ -187,6 +255,7 @@ async def configure_stack(
     components: dict[str, dict[str, Any]],
     *,
     preview: bool = True,
+    stitch_project_id: str | None = None,
 ) -> dict:
     """Generate per-component Justfile recipes and vibraphone.yaml config.
 
@@ -197,6 +266,7 @@ async def configure_stack(
     Args:
         components: mapping of component name to config (language, root, test_command, etc.)
         preview: if True, return proposals without writing; if False, write and reload.
+        stitch_project_id: if provided, enable stitch and write project ID to .env + vibraphone.yaml.
     """
     # Read existing vibraphone.yaml
     config_path = _find_config_file()
@@ -205,15 +275,27 @@ async def configure_stack(
         with config_path.open() as f:
             existing_config = yaml.safe_load(f) or {}
 
+    # If stitch_project_id provided, update the stitch section before rendering
+    if stitch_project_id:
+        stitch_section = existing_config.setdefault("stitch", {})
+        stitch_section["enabled"] = True
+        stitch_section["project_id"] = "${STITCH_PROJECT_ID}"
+
     justfile_content = _render_justfile(components)
     yaml_content = _render_vibraphone_yaml(components, existing_config)
 
     if preview:
-        return {
+        result: dict[str, Any] = {
             "status": "preview",
             "justfile": justfile_content,
             "vibraphone_yaml": yaml_content,
         }
+        if stitch_project_id:
+            result["stitch_note"] = (
+                f"Will enable stitch, write STITCH_PROJECT_ID={stitch_project_id} to .env, "
+                "and add stitch entry to .mcp/config.json."
+            )
+        return result
 
     # Write files
     project_root = config_path.parent if config_path else Path.cwd()
@@ -224,6 +306,14 @@ async def configure_stack(
     yaml_path = project_root / "vibraphone.yaml"
     yaml_path.write_text(yaml_content)
 
+    # Handle stitch project ID provisioning
+    if stitch_project_id:
+        _update_env_var("STITCH_PROJECT_ID", stitch_project_id, project_root)
+
+    # Sync MCP config based on stitch.enabled
+    stitch_enabled = existing_config.get("stitch", {}).get("enabled", False)
+    mcp_sync_result = _sync_mcp_config(stitch_enabled=stitch_enabled, project_root=project_root)
+
     # Reload config singleton so quality tools pick up new components
     reload_config()
 
@@ -232,4 +322,5 @@ async def configure_stack(
         "justfile_path": str(justfile_path),
         "vibraphone_yaml_path": str(yaml_path),
         "components": list(components.keys()),
+        "stitch_config": mcp_sync_result,
     }
