@@ -1,4 +1,7 @@
 # vibraphone.yaml — Project Genome
+# Note: The components section below is a placeholder.
+# Run configure_stack after project planning to generate
+# per-component Justfile recipes and update this config.
 
 project:
   name: "my-app"
@@ -10,6 +13,7 @@ components:
     root: ./src
     test_command: "pytest --tb=short"
     lint_command: "ruff check . && ruff format --check ."
+    format_command: "ruff check --fix . && ruff format ."
     coverage_threshold: 80
 
 quality_gate:

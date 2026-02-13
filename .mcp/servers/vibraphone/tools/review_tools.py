@@ -11,8 +11,9 @@ import json
 import os
 from pathlib import Path
 
-from config import config
 from openai import AsyncOpenAI
+
+from config import config
 from utils import br_client, session
 
 

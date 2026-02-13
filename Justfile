@@ -1,27 +1,18 @@
 set shell := ["bash", "-c"]
 set dotenv-load := true
 
-# ─── Quality Gate ───────────────────────────────────
-check: lint test
-    @echo "Quality gate passed."
+# ─── Quality Gate (stubs — run configure_stack to generate) ───
+check:
+    @echo "Error: Run configure_stack to set up quality recipes." && exit 1
 
-# ─── Testing ──────────────────────────────────────
 test *ARGS:
-    @echo "Running tests..."
-    uv run pytest {{ARGS}}
+    @echo "Error: Run configure_stack to set up quality recipes." && exit 1
 
-# ─── Linting ──────────────────────────────────────
 lint:
-    @echo "Linting..."
-    uv run ruff check .
-    uv run ruff format --check .
-    uv run ty check src/ .mcp/servers/vibraphone/ scripts/
+    @echo "Error: Run configure_stack to set up quality recipes." && exit 1
 
-# ─── Formatting ───────────────────────────────────
 format:
-    @echo "Formatting..."
-    uv run ruff check --fix .
-    uv run ruff format .
+    @echo "Error: Run configure_stack to set up quality recipes." && exit 1
 
 # ─── Git Worktrees ─────────────────────────────────
 start-task id:
@@ -65,7 +56,6 @@ bootstrap:
     @which git >/dev/null 2>&1 || (echo "git not found" && exit 1)
     @which just >/dev/null 2>&1 || (echo "just not found" && exit 1)
     @which br >/dev/null 2>&1 || (echo "br (beads_rust) not found. Install: cargo install beads_rust" && exit 1)
-    @which uv >/dev/null 2>&1 || (echo "uv not found. Install: curl -LsSf https://astral.sh/uv/install.sh | sh" && exit 1)
     @echo "Prerequisites OK."
     cp -n .env.example .env 2>/dev/null || true
     just beads-init

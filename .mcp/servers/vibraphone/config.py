@@ -17,6 +17,7 @@ class ComponentConfig:
     root: str = "./src"
     test_command: str = "pytest --tb=short"
     lint_command: str = "ruff check ."
+    format_command: str = "ruff check --fix . && ruff format ."
     coverage_threshold: int = 80
 
 
@@ -150,3 +151,10 @@ def load_config(path: str | Path | None = None) -> VibraphoneConfig:
 
 # Module-level singleton — loaded once, imported by tools
 config = load_config()
+
+
+def reload_config() -> VibraphoneConfig:
+    """Re-read vibraphone.yaml and update the module-level singleton."""
+    global config
+    config = load_config()
+    return config

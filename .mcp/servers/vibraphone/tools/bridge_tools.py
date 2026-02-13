@@ -13,6 +13,7 @@ from pathlib import Path
 
 import yaml
 from defusedxml.ElementTree import fromstring as parse_xml
+
 from utils import br_client, session
 
 # ---------------------------------------------------------------------------

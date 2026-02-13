@@ -1,4 +1,4 @@
-"""Quality gate tools — test, lint, commit with circuit breakers."""
+"""Quality gate tools — test, lint, format, commit with circuit breakers."""
 
 from __future__ import annotations
 
@@ -51,7 +51,7 @@ async def run_tests(component: str | None = None, scope: str | None = None) -> d
         session.audit_log("run_tests", {"component": component, "scope": scope}, "escalated", result)
         return result
 
-    cmd = "just test"
+    cmd = f"just test-{component}" if component else "just test"
     if scope:
         cmd = f"{cmd} {scope}"
 
@@ -65,7 +65,7 @@ async def run_tests(component: str | None = None, scope: str | None = None) -> d
 
 async def run_lint(component: str | None = None) -> dict:
     """Run linter. No circuit breaker."""
-    cmd = "just lint"
+    cmd = f"just lint-{component}" if component else "just lint"
 
     rc, output = await _run_shell(cmd)
     status = "pass" if rc == 0 else "fail"
@@ -76,6 +76,18 @@ async def run_lint(component: str | None = None) -> dict:
 
     result = {"status": status, "issues": issues}
     session.audit_log("run_lint", {"component": component}, status, result)
+    return result
+
+
+async def run_format(component: str | None = None) -> dict:
+    """Run formatter. No circuit breaker."""
+    cmd = f"just format-{component}" if component else "just format"
+
+    rc, output = await _run_shell(cmd)
+    status = "formatted" if rc == 0 else "error"
+
+    result = {"status": status, "output": output}
+    session.audit_log("run_format", {"component": component}, status, result)
     return result
 
 

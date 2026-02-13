@@ -36,12 +36,19 @@ Vibraphone MCP tools. The tools enforce the rules — you follow the tools.
 | `start_task`  | `task_id: str` | `{"worktree": path, "branch": name}`  | `br update --status in_progress` + `just start-task` + updates session.json |
 | `finish_task` | `task_id: str` | `{"pushed": branch, "cleaned": bool}` | `just finish-task` + optional worktree cleanup                              |
 
+### Stack Configuration Tools
+
+| Tool              | Inputs                                             | Returns                                                        | Notes                                                       |
+| ----------------- | -------------------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------- |
+| `configure_stack` | `components: dict`, `preview: bool = True`         | `{"status": "preview"\|"configured", ...}`                     | Generates per-component Justfile recipes + vibraphone.yaml   |
+
 ### Quality Gate Tools
 
 | Tool                  | Inputs                           | Returns                                                                          | Circuit Breaker                  |
 | --------------------- | -------------------------------- | -------------------------------------------------------------------------------- | -------------------------------- |
 | `run_tests`           | `component?: str`, `scope?: str` | `{"status": "pass"\|"fail"\|"ESCALATED", "output": ..., "attempt": n}`           | `max_test_attempts`              |
 | `run_lint`            | `component?: str`                | `{"status": "pass"\|"fail", "issues": [...]}`                                    | —                                |
+| `run_format`          | `component?: str`                | `{"status": "formatted"\|"error", "output": ...}`                                | —                                |
 | `request_code_review` | — (reviews staged changes)       | `{"status": "APPROVED"\|"REJECTED"\|"ESCALATED", "issues": [...], "attempt": n}` | `max_review_attempts`            |
 | `attempt_commit`      | `message: str`                   | `{"status": "committed"\|"rejected", "reason?": ...}`                            | Requires prior `APPROVED` review |
 
@@ -114,6 +121,9 @@ stateDiagram-v2
 3. Read `docs/ARCHITECTURE.md` for system context.
 4. Read `docs/CONSTITUTION.md` for coding rules.
 5. Read the relevant `.planning/phases/` spec for the current phase.
+6. If the Justfile has quality stubs (check/test/lint exit with
+   "configure_stack" message), run `configure_stack` with the project's
+   component definitions before entering the execution loop.
 
 ---
 
