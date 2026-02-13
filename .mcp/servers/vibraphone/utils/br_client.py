@@ -71,6 +71,7 @@ async def br_create(
     title: str,
     description: str | None = None,
     type_: str | None = None,
+    priority: int | None = None,
     labels: str | None = None,
 ) -> dict:
     """Create a new Beads issue."""
@@ -79,6 +80,8 @@ async def br_create(
         args.extend(["--description", description])
     if type_:
         args.extend(["--type", type_])
+    if priority is not None:
+        args.extend(["--priority", str(priority)])
     if labels:
         args.extend(["--labels", labels])
     return await br_run(*args)
@@ -157,3 +160,26 @@ def detect_orphans(tasks: list[dict]) -> list[dict]:
 async def br_sync() -> dict:
     """Run br sync --flush-only."""
     return await br_run("sync", "--flush-only")
+
+
+async def git_log(branch: str, count: int = 10) -> str | None:
+    """Return ``git log --oneline -N branch`` output, or None if branch doesn't exist."""
+    # Check if branch exists
+    check = await asyncio.create_subprocess_exec(
+        "git", "rev-parse", "--verify", branch,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    await check.communicate()
+    if check.returncode:
+        return None
+
+    proc = await asyncio.create_subprocess_exec(
+        "git", "log", "--oneline", f"-{count}", branch,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, _ = await proc.communicate()
+    if proc.returncode:
+        return None
+    return stdout.decode().strip() or None

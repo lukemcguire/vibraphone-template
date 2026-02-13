@@ -8,7 +8,9 @@ from fastmcp.tools import Tool
 
 from tools.beads_tools import (
     abandon_task,
+    add_task,
     complete_task,
+    get_task_context,
     health_check,
     list_tasks,
     next_ready,
@@ -28,6 +30,8 @@ for fn in [
     complete_task,
     abandon_task,
     health_check,
+    get_task_context,
+    add_task,
     start_task,
     finish_task,
     run_tests,

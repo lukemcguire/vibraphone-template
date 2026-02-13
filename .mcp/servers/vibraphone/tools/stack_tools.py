@@ -203,6 +203,9 @@ def _render_justfile(components: dict[str, dict[str, Any]]) -> str:
     sections.append("beads-sync:")
     sections.append("    br sync --flush-only")
     sections.append("")
+    sections.append("add-task:")
+    sections.append("    uv run python scripts/add_task.py")
+    sections.append("")
 
     # Bootstrap
     sections.append("# --- Bootstrap ---")

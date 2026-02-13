@@ -49,6 +49,9 @@ beads-ready:
 beads-sync:
     br sync --flush-only
 
+add-task:
+    uv run python scripts/add_task.py
+
 # ─── Bootstrap ─────────────────────────────────────
 bootstrap:
     @echo "Bootstrapping Vibraphone project..."
