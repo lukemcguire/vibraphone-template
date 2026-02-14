@@ -26,6 +26,9 @@ async def _run_just(*args: str) -> str:
 async def start_task(task_id: str) -> dict:
     """Create a worktree and branch for a task, mark it in-progress."""
     await br_client.br_update(task_id, status="in_progress")
+    # Sync so other agents (and bv) see this task is claimed
+    if config.beads.auto_sync:
+        await br_client.br_sync()
     await _run_just("start-task", task_id)
 
     worktree_path = f"./worktrees/{task_id}"

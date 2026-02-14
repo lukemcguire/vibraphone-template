@@ -162,6 +162,25 @@ async def br_sync() -> dict:
     return await br_run("sync", "--flush-only")
 
 
+async def bv_run(*args: str) -> dict:
+    """Run ``bv <args>`` and return parsed JSON output."""
+    cmd = ["bv", *args]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await proc.communicate()
+
+    if proc.returncode:
+        raise BrError(proc.returncode, stderr.decode().strip(), args)
+
+    text = stdout.decode().strip()
+    if not text:
+        return {}
+    return json.loads(text)
+
+
 async def git_log(branch: str, count: int = 10) -> str | None:
     """Return ``git log --oneline -N branch`` output, or None if branch doesn't exist."""
     # Check if branch exists

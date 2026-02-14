@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from config import config
+from config import config, project_root
 from utils import br_client, session
 
 
@@ -75,6 +75,7 @@ async def get_task_context(task_id: str) -> dict:
     instead of loading entire files on every task switch.
     """
     task = await br_client.br_show(task_id)
+    root = project_root()
 
     # Extract plan label (set by bridge_tools during import)
     plan_content: str | None = None
@@ -84,12 +85,19 @@ async def get_task_context(task_id: str) -> dict:
         plan_id = match.group(1)  # e.g. "1-2"
         # Derive phase number from plan_id: "1-2" → phase 1
         phase_number = plan_id.split("-")[0]
-        plan_path = Path(f".planning/phases/{phase_number}/{plan_id}-PLAN.md")
+        # GSD uses zero-padded directory names like "01-core-crawler-foundation"
+        padded = phase_number.zfill(2)
+        phases_dir = root / ".planning" / "phases"
+        phase_dirs = sorted(phases_dir.glob(f"{padded}-*"))
+        if phase_dirs:
+            plan_path = phase_dirs[0] / f"{plan_id}-PLAN.md"
+        else:
+            plan_path = phases_dir / phase_number / f"{plan_id}-PLAN.md"
         if plan_path.exists():
             plan_content = plan_path.read_text()
 
     # Read ARCHITECTURE.md (compact, context-dense)
-    arch_path = Path("docs/ARCHITECTURE.md")
+    arch_path = root / "docs" / "ARCHITECTURE.md"
     architecture: str | None = None
     if arch_path.exists():
         architecture = arch_path.read_text()
@@ -104,6 +112,40 @@ async def get_task_context(task_id: str) -> dict:
         "recent_commits": recent_commits,
     }
     session.audit_log("get_task_context", {"task_id": task_id}, "ok", result)
+    return result
+
+
+async def triage() -> dict:
+    """Run bv graph-aware triage and return ranked recommendations.
+
+    Returns ranked actionable items, quick wins, blockers to clear,
+    and project health metrics. Use this instead of next_ready when
+    you need smarter task selection — especially for parallel agents.
+
+    Requires JSONL to be current (auto-synced on state transitions).
+    """
+    # Ensure JSONL is fresh before triage
+    if config.beads.auto_sync:
+        await br_client.br_sync()
+    result = await br_client.bv_run("--robot-triage")
+    session.audit_log("triage", {}, "ok", result)
+    return result
+
+
+async def plan_parallel() -> dict:
+    """Return parallel execution tracks for current ready work.
+
+    Returns execution tracks showing which tasks can run concurrently
+    and which are sequential, with unblocks lists. Use this to divide
+    work across multiple subagents.
+
+    Requires JSONL to be current (auto-synced on state transitions).
+    """
+    # Ensure JSONL is fresh before planning
+    if config.beads.auto_sync:
+        await br_client.br_sync()
+    result = await br_client.bv_run("--robot-plan")
+    session.audit_log("plan_parallel", {}, "ok", result)
     return result
 
 

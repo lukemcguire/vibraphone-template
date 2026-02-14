@@ -14,6 +14,7 @@ from pathlib import Path
 import yaml
 from defusedxml.ElementTree import fromstring as parse_xml
 
+from config import project_root
 from utils import br_client, session
 
 # ---------------------------------------------------------------------------
@@ -36,13 +37,38 @@ def _extract_frontmatter(content: str) -> dict:
     return yaml.safe_load(match.group(1)) or {}
 
 
+_BARE_AMP_RE = re.compile(r"&(?!amp;|lt;|gt;|quot;|apos;|#)")
+# Structural XML tags used in GSD plan files (opening, closing, or self-closing)
+_KNOWN_TAGS = r"tasks|task|name|files|action|verify|done|title|description|labels|type"
+_STRUCTURAL_TAG_RE = re.compile(rf"<(?:/?(?:{_KNOWN_TAGS})\b)")
+
+
+def _sanitize_xml_content(raw: str) -> str:
+    """Escape '&' and '<' that aren't part of known XML structure."""
+    raw = _BARE_AMP_RE.sub("&amp;", raw)
+    # Escape '<' that don't start a known structural tag
+    result: list[str] = []
+    i = 0
+    while i < len(raw):
+        if raw[i] == "<":
+            if _STRUCTURAL_TAG_RE.match(raw, i):
+                result.append("<")
+            else:
+                result.append("&lt;")
+        else:
+            result.append(raw[i])
+        i += 1
+    return "".join(result)
+
+
 def _extract_tasks_from_xml(body: str) -> list[dict]:
     """Find <tasks>...</tasks> block and parse each <task> element."""
     match = _TASKS_RE.search(body)
     if not match:
         return []
 
-    xml_str = f"<tasks>{match.group(1)}</tasks>"
+    inner = _sanitize_xml_content(match.group(1))
+    xml_str = f"<tasks>{inner}</tasks>"
     root = parse_xml(xml_str)
 
     tasks = []
@@ -143,7 +169,15 @@ async def import_gsd_plan(phase_number: int) -> dict:
     Returns:
         dict with tasks_created, dependencies, and diagram_update_needed.
     """
-    phase_dir = Path(f".planning/phases/{phase_number}")
+    # GSD uses zero-padded directory names like "01-core-crawler-foundation"
+    root = project_root()
+    padded = str(phase_number).zfill(2)
+    phases_dir = root / ".planning" / "phases"
+    candidates = sorted(phases_dir.glob(f"{padded}-*"))
+    if not candidates:
+        # Fallback to exact numeric match
+        candidates = [phases_dir / str(phase_number)]
+    phase_dir = candidates[0]
     if not phase_dir.is_dir():
         return {"error": f"Phase directory not found: {phase_dir}"}
 
@@ -198,6 +232,9 @@ async def import_gsd_plan(phase_number: int) -> dict:
         "dependencies": dependencies,
         "diagram_update_needed": has_new_components,
     }
+
+    # Flush to JSONL so bv sees the imported tasks
+    await br_client.br_sync()
 
     session.audit_log(
         "import_gsd_plan",

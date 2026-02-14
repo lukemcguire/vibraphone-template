@@ -113,6 +113,23 @@ def _build_config(raw: dict) -> VibraphoneConfig:
     )
 
 
+def project_root() -> Path:
+    """Return the project root directory.
+
+    Resolution: VIBRAPHONE_CONFIG env var parent > walk-up search for
+    vibraphone.yaml > fall back to CWD.
+    """
+    env_path = os.environ.get("VIBRAPHONE_CONFIG")
+    if env_path:
+        resolved = Path(env_path).resolve()
+        if resolved.exists():
+            return resolved.parent
+    found = _find_config_file()
+    if found:
+        return found.parent
+    return Path.cwd().resolve()
+
+
 def _find_config_file(filename: str = "vibraphone.yaml") -> Path | None:
     """Walk up from CWD to find vibraphone.yaml."""
     current = Path.cwd().resolve()

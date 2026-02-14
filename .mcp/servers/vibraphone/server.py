@@ -14,6 +14,8 @@ from tools.beads_tools import (
     health_check,
     list_tasks,
     next_ready,
+    plan_parallel,
+    triage,
 )
 from tools.bridge_tools import import_gsd_plan
 from tools.quality_tools import attempt_commit, run_format, run_lint, run_tests
@@ -32,6 +34,8 @@ for fn in [
     health_check,
     get_task_context,
     add_task,
+    triage,
+    plan_parallel,
     start_task,
     finish_task,
     run_tests,
