@@ -117,11 +117,11 @@ async def merge_task(task_id: str) -> dict:
             "reason": f"Main worktree is on '{current_branch}', expected '{base}'",
         }
 
-    # 3. Rebase feature branch onto main
-    rc, rebase_output = await _git("rebase", base, branch, cwd=root)
+    # 3. Rebase feature branch onto main (run inside worktree where branch is checked out)
+    rc, rebase_output = await _git("rebase", base, cwd=worktree_path)
     if rc != 0:
         # Abort the failed rebase to leave repo clean
-        await _git("rebase", "--abort", cwd=root)
+        await _git("rebase", "--abort", cwd=worktree_path)
         conflicted_files = _parse_conflict_files(rebase_output)
         result = {
             "status": "conflict",

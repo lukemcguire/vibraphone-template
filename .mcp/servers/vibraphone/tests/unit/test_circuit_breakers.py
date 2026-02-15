@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -166,7 +166,10 @@ class TestReviewIssueAggregation:
 
         monkeypatch.setenv("REVIEWER_API_KEY", "fake-key")
 
+        stage_result = {"status": "staged", "staged": ["foo.py"], "warnings": []}
+
         with (
+            patch("tools.review_tools._stage_files", new_callable=AsyncMock, return_value=stage_result),
             patch("tools.review_tools._git_diff_staged", new_callable=AsyncMock, return_value=diff_text),
             patch("tools.review_tools._git_diff_staged_hash", new_callable=AsyncMock, return_value=diff_hash),
             patch("tools.review_tools._get_changed_files", new_callable=AsyncMock, return_value=["foo.py"]),
@@ -180,22 +183,11 @@ class TestReviewIssueAggregation:
                     "raw_response": "[]",
                 },
             ),
-            patch("tools.review_tools.Path") as mock_path,
+            patch("tools.review_tools._load_review_files", return_value=("# Constitution", "# Prompt")),
         ):
-            # Make constitution and prompt files appear to exist
-            mock_constitution = MagicMock()
-            mock_constitution.exists.return_value = True
-            mock_constitution.read_text.return_value = "# Constitution"
-
-            mock_prompt = MagicMock()
-            mock_prompt.exists.return_value = True
-            mock_prompt.read_text.return_value = "# Prompt"
-
-            mock_path.side_effect = lambda p: mock_constitution if "CONSTITUTION" in str(p) else mock_prompt
-
             from tools.review_tools import request_code_review
 
-            result = await request_code_review()
+            result = await request_code_review(stage_all=True)
 
         # Should have 2 unique issues (deduped by rule+file+line)
         assert len(result["issues"]) == 2
@@ -214,7 +206,10 @@ class TestReviewIssueAggregation:
 
         monkeypatch.setenv("REVIEWER_API_KEY", "fake-key")
 
+        stage_result = {"status": "staged", "staged": ["foo.py"], "warnings": []}
+
         with (
+            patch("tools.review_tools._stage_files", new_callable=AsyncMock, return_value=stage_result),
             patch("tools.review_tools._git_diff_staged", new_callable=AsyncMock, return_value=diff_text),
             patch("tools.review_tools._git_diff_staged_hash", new_callable=AsyncMock, return_value=diff_hash),
             patch("tools.review_tools._get_changed_files", new_callable=AsyncMock, return_value=["foo.py"]),
@@ -228,16 +223,11 @@ class TestReviewIssueAggregation:
                     "raw_response": "[]",
                 },
             ),
-            patch("tools.review_tools.Path") as mock_path,
+            patch("tools.review_tools._load_review_files", return_value=("# content", "# content")),
         ):
-            mock_file = MagicMock()
-            mock_file.exists.return_value = True
-            mock_file.read_text.return_value = "# content"
-            mock_path.side_effect = lambda _p: mock_file
-
             from tools.review_tools import request_code_review
 
-            result = await request_code_review()
+            result = await request_code_review(stage_all=True)
 
         assert result["attempt"] == 1
         assert len(result["issues"]) == 1

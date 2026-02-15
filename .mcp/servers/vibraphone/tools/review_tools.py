@@ -9,6 +9,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 from pathlib import Path, PurePosixPath
 
 from openai import AsyncOpenAI
@@ -128,6 +129,22 @@ def _read_file_contents(paths: list[str]) -> str:
     return "\n\n".join(sections)
 
 
+def _parse_porcelain(lines: list[str]) -> list[str]:
+    """Extract file paths from git status --porcelain output lines."""
+    paths_out: list[str] = []
+    for line in lines:
+        if not line.strip():
+            continue
+        m = re.match(r"^..\s+(.+)$", line)
+        if m:
+            path = m.group(1).strip('"')
+            # For renames (R/C), take the destination path after " -> "
+            if " -> " in path:
+                path = path.split(" -> ", 1)[1]
+            paths_out.append(path)
+    return paths_out
+
+
 async def _stage_files(paths: list[str] | None, *, stage_all: bool) -> dict:
     """Stage files with safety checks for sensitive files.
 
@@ -139,10 +156,15 @@ async def _stage_files(paths: list[str] | None, *, stage_all: bool) -> dict:
     Returns:
         dict with status, staged list, and warnings list.
     """
-    if bool(paths) == stage_all:
+    if paths and stage_all:
         return {
             "status": "error",
-            "reason": "Provide either 'paths' or 'stage_all=True', not both (or neither).",
+            "reason": "Provide either 'paths' or 'stage_all=True', not both.",
+        }
+    if not paths and not stage_all:
+        return {
+            "status": "error",
+            "reason": "Provide either 'paths' or 'stage_all=True'.",
         }
 
     cwd = _working_dir()
@@ -160,8 +182,7 @@ async def _stage_files(paths: list[str] | None, *, stage_all: bool) -> dict:
         )
         stdout, _ = await proc.communicate()
         lines = stdout.decode().strip().splitlines()
-        # Parse porcelain output: first 3 chars are status, rest is path
-        candidates = [line[3:].strip().strip('"') for line in lines if line.strip()]
+        candidates = _parse_porcelain(lines)
     else:
         candidates = list(paths)  # type: ignore[arg-type]
 
@@ -314,47 +335,43 @@ async def request_code_review(
     """
     state = session.load_session() or session.SessionState()
     task_id = state.active_task or "unknown"
-
-    # Increment review attempts
-    attempt = session.increment_review_attempts(task_id)
     max_attempts = config.quality_gate.max_review_attempts
 
-    # Circuit breaker
-    if attempt > max_attempts:
+    # Check circuit breaker (without incrementing yet)
+    current_attempts = (state.review_attempts or {}).get(task_id, 0)
+    if current_attempts >= max_attempts:
         await br_client.br_update(task_id, status="blocked")
         result = {
             "status": "ESCALATED",
             "issues": [],
-            "attempt": attempt,
+            "attempt": current_attempts,
             "reason": f"Max review attempts ({max_attempts}) exceeded. Task blocked.",
         }
         session.audit_log("request_code_review", {}, "escalated", result)
         return result
 
-    # Validate API key
+    # Validate API key (don't burn an attempt for missing config)
     api_key = os.environ.get("REVIEWER_API_KEY")
     if not api_key:
         result = {
-            "status": "ESCALATED",
+            "status": "error",
             "issues": [],
-            "attempt": attempt,
             "reason": "REVIEWER_API_KEY environment variable not set",
         }
-        session.audit_log("request_code_review", {}, "escalated", result)
+        session.audit_log("request_code_review", {}, "error", result)
         return result
 
-    # Stage files first
+    # Stage files first (don't burn an attempt for staging failures)
     stage_result = await _stage_files(paths, stage_all=stage_all)
     if stage_result["status"] != "staged":
         result = {
-            "status": "REJECTED",
+            "status": "error",
             "issues": [],
-            "attempt": attempt,
             "reason": stage_result.get("reason", "No files to stage"),
             "staged": stage_result.get("staged", []),
             "warnings": stage_result.get("warnings", []),
         }
-        session.audit_log("request_code_review", {}, "rejected", result)
+        session.audit_log("request_code_review", {}, "error", result)
         return result
 
     staged_files = stage_result["staged"]
@@ -364,14 +381,13 @@ async def request_code_review(
     diff = await _git_diff_staged()
     if not diff.strip():
         result = {
-            "status": "REJECTED",
+            "status": "error",
             "issues": [],
-            "attempt": attempt,
             "reason": "No staged changes to review",
             "staged": staged_files,
             "warnings": warnings,
         }
-        session.audit_log("request_code_review", {}, "rejected", result)
+        session.audit_log("request_code_review", {}, "error", result)
         return result
 
     # Get changed file contents
@@ -382,27 +398,28 @@ async def request_code_review(
     constitution, prompt = _load_review_files()
     if constitution is None:
         result = {
-            "status": "ESCALATED",
+            "status": "error",
             "issues": [],
-            "attempt": attempt,
             "reason": f"Constitution file not found: {config.review.constitution_file}",
             "staged": staged_files,
             "warnings": warnings,
         }
-        session.audit_log("request_code_review", {}, "escalated", result)
+        session.audit_log("request_code_review", {}, "error", result)
         return result
 
     if prompt is None:
         result = {
-            "status": "ESCALATED",
+            "status": "error",
             "issues": [],
-            "attempt": attempt,
             "reason": f"Reviewer prompt not found: {config.review.prompt_file}",
             "staged": staged_files,
             "warnings": warnings,
         }
-        session.audit_log("request_code_review", {}, "escalated", result)
+        session.audit_log("request_code_review", {}, "error", result)
         return result
+
+    # All preconditions met — now increment the attempt counter
+    attempt = session.increment_review_attempts(task_id)
 
     # Perform the review
     review_result = await _perform_review(
