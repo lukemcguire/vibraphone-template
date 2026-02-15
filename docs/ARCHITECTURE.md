@@ -23,11 +23,12 @@ External systems and boundaries.
 
 ```mermaid
 C4Context
-    title System Context Diagram
-    %% Replace with actual system context after project planning
-    Person(user, "User", "End user of the system")
-    System(system, "System", "The system being built")
-    Rel(user, system, "Uses")
+    title System Context — ZombieCrawl
+    Person(user, "User", "Runs CLI to find broken links on a website")
+    System(zc, "ZombieCrawl", "CLI tool that crawls a website and reports broken links")
+    System_Ext(target, "Target Website", "The website being crawled for broken links")
+    Rel(user, zc, "Runs with target URL")
+    Rel(zc, target, "HTTP GET/HEAD requests")
 ```
 
 ---
@@ -38,15 +39,15 @@ Services, processes, and communication.
 
 ```mermaid
 C4Container
-    title Container Diagram
-    %% Replace with actual containers after project planning
-    Person(user, "User", "End user")
-    System_Boundary(sb, "System") {
-        Container(app, "Application", "Tech TBD", "Main application")
-        ContainerDb(db, "Database", "Tech TBD", "Primary data store")
+    title Container Diagram — ZombieCrawl
+    Person(user, "User", "Runs CLI from terminal")
+    System_Boundary(sb, "ZombieCrawl") {
+        Container(cli, "zombiecrawl", "Go binary", "CLI entry point, flag parsing, signal handling")
     }
-    Rel(user, app, "Uses")
-    Rel(app, db, "Reads/Writes")
+    System_Ext(target, "Target Website", "Serves HTML pages over HTTP/HTTPS")
+    Rel(user, cli, "Provides URL and flags")
+    Rel(cli, target, "HTTP GET/HEAD requests")
+    Rel(cli, user, "Prints broken link report to stdout")
 ```
 
 ---
@@ -63,9 +64,10 @@ C4Component
         Component(crawler, "crawler", "Go", "Concurrent crawl engine with worker pool")
         Component(extract, "crawler/extract", "Go", "HTML tokenizer-based link extraction")
         Component(urlutil, "urlutil", "Go", "URL filtering, normalization, domain checks")
-        Component(result, "result", "Go", "Link result types")
+        Component(result, "result", "Go", "Link result types and output formatting")
     }
     Rel(main, crawler, "Starts crawl")
+    Rel(main, result, "Prints results to stdout")
     Rel(crawler, extract, "Extracts links from pages")
     Rel(crawler, urlutil, "Filters and classifies URLs")
     Rel(extract, urlutil, "Normalizes discovered URLs")
@@ -76,32 +78,83 @@ C4Component
 
 ## Data Model
 
-ER diagram of database schema.
+Core types and their relationships (no database — all in-memory).
 
 ```mermaid
-erDiagram
-    %% Replace with actual data model after project planning
-    ENTITY {
-        string id PK
-        string name
-        datetime created_at
+classDiagram
+    class Config {
+        string StartURL
+        int Concurrency
+        Duration RequestTimeout
     }
+    class CrawlJob {
+        string URL
+        string SourcePage
+        bool IsExternal
+    }
+    class CrawlResult {
+        CrawlJob Job
+        []string Links
+        *LinkResult Result
+        error Err
+    }
+    class LinkResult {
+        string URL
+        int StatusCode
+        string Error
+        string SourcePage
+        bool IsExternal
+    }
+    class CrawlStats {
+        int TotalChecked
+        int BrokenCount
+        Duration Duration
+    }
+    class Result {
+        []LinkResult BrokenLinks
+        CrawlStats Stats
+    }
+    CrawlResult --> CrawlJob
+    CrawlResult --> LinkResult
+    Result --> LinkResult
+    Result --> CrawlStats
 ```
 
 ---
 
 ## Key Sequence Diagrams
 
-Critical flows (auth, data pipeline, etc.).
+### Crawl Flow
 
 ```mermaid
 sequenceDiagram
-    %% Replace with actual sequence diagrams after project planning
     participant U as User
-    participant A as Application
-    participant D as Database
-    U->>A: Request
-    A->>D: Query
-    D-->>A: Result
-    A-->>U: Response
+    participant M as main
+    participant C as Crawler
+    participant W as Worker Pool
+    participant E as ExtractLinks
+    participant T as Target Website
+
+    U->>M: zombiecrawl [flags] <url>
+    M->>C: New(cfg)
+    M->>C: Run(ctx)
+    C->>W: Launch N workers
+    C->>W: Seed start URL as CrawlJob
+
+    loop BFS until queue empty
+        W->>T: GET (internal) / HEAD (external)
+        T-->>W: HTTP response
+        alt Internal page
+            W->>E: ExtractLinks(body, baseURL)
+            E-->>W: []discovered links
+            W-->>C: CrawlResult{Links, Result}
+            C->>C: Enqueue new links (dedup via visited map)
+        else External link
+            W-->>C: CrawlResult{Result}
+        end
+    end
+
+    C-->>M: *Result{BrokenLinks, Stats}
+    M->>M: PrintResults(stdout, result)
+    M-->>U: Broken link report + exit code
 ```
