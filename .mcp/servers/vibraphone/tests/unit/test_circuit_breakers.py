@@ -141,6 +141,7 @@ class TestReviewIssueAggregation:
 
         # Seed session with issues from a prior review
         state = session.load_session()
+        assert state is not None
         state.last_review_issues = [
             {"rule": "no-unused-vars", "file": "foo.py", "line": 10, "severity": "warning", "message": "old"},
         ]
@@ -242,6 +243,7 @@ class TestAttemptCommit:
     async def test_rejects_when_diff_changed(self, set_active_task):
         set_active_task("T-1")
         state = session.load_session()
+        assert state is not None
         state.last_review_status = "APPROVED"
         state.last_review_diff_hash = "stale-hash"
         session.save_session(state)
@@ -259,6 +261,7 @@ class TestAttemptCommit:
         review_hash = "abc123"
 
         state = session.load_session()
+        assert state is not None
         state.last_review_status = "APPROVED"
         state.last_review_diff_hash = review_hash
         session.save_session(state)
@@ -284,6 +287,7 @@ class TestAttemptCommit:
         review_hash = "abc123"
 
         state = session.load_session()
+        assert state is not None
         state.last_review_status = "APPROVED"
         state.last_review_diff_hash = review_hash
         session.save_session(state)

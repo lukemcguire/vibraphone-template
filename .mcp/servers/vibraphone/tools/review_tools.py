@@ -13,8 +13,20 @@ from pathlib import Path
 
 from openai import AsyncOpenAI
 
-from config import config
+from config import config, project_root
 from utils import br_client, session
+
+
+def _working_dir() -> str | None:
+    """Resolve the working directory for git commands.
+
+    If a worktree is active in the session, return its absolute path.
+    Otherwise return None (inherit the process's cwd).
+    """
+    state = session.load_session()
+    if state and state.worktree:
+        return str((project_root() / state.worktree).resolve())
+    return None
 
 
 async def _git_diff_staged() -> str:
@@ -25,6 +37,7 @@ async def _git_diff_staged() -> str:
         "--staged",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        cwd=_working_dir(),
     )
     stdout, _ = await proc.communicate()
     return stdout.decode()
@@ -38,6 +51,7 @@ async def _git_diff_staged_hash() -> str:
         "--staged",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        cwd=_working_dir(),
     )
     stdout, _ = await proc.communicate()
     return hashlib.sha256(stdout).hexdigest()
@@ -52,6 +66,7 @@ async def _get_changed_files() -> list[str]:
         "--name-only",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        cwd=_working_dir(),
     )
     stdout, _ = await proc.communicate()
     return [f for f in stdout.decode().strip().splitlines() if f]
@@ -59,9 +74,11 @@ async def _get_changed_files() -> list[str]:
 
 def _read_file_contents(paths: list[str]) -> str:
     """Read and format the contents of the given files for review context."""
+    wdir = _working_dir()
+    base = Path(wdir) if wdir else Path.cwd()
     sections = []
     for path in paths:
-        p = Path(path)
+        p = base / path
         if p.exists() and p.is_file():
             try:
                 content = p.read_text()
@@ -190,9 +207,10 @@ async def request_code_review() -> dict:
     changed_files = await _get_changed_files()
     files_content = _read_file_contents(changed_files)
 
-    # Load constitution and reviewer prompt
-    constitution_path = Path(config.review.constitution_file)
-    prompt_path = Path(config.review.prompt_file)
+    # Load constitution and reviewer prompt (always from project root, not worktree)
+    root = project_root()
+    constitution_path = root / config.review.constitution_file
+    prompt_path = root / config.review.prompt_file
 
     if not constitution_path.exists():
         result = {

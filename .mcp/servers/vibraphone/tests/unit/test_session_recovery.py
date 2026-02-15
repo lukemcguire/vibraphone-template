@@ -112,6 +112,7 @@ class TestStaleSession:
 
         # Session should be cleared
         state = session.load_session()
+        assert state is not None
         assert state.active_task is None
 
     @pytest.mark.asyncio
@@ -158,4 +159,5 @@ class TestStaleSession:
 
         # Session should be cleared
         state = session.load_session()
+        assert state is not None
         assert state.active_task is None

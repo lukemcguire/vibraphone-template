@@ -33,7 +33,10 @@ async def br_run(*args: str) -> dict:
     text = stdout.decode().strip()
     if not text:
         return {}
-    return json.loads(text)
+    parsed = json.loads(text)
+    if isinstance(parsed, list):
+        return {"items": parsed}
+    return parsed
 
 
 async def br_list(filter_str: str | None = None) -> dict:
@@ -178,7 +181,10 @@ async def bv_run(*args: str) -> dict:
     text = stdout.decode().strip()
     if not text:
         return {}
-    return json.loads(text)
+    parsed = json.loads(text)
+    if isinstance(parsed, list):
+        return {"items": parsed}
+    return parsed
 
 
 async def git_log(branch: str, count: int = 10) -> str | None:
