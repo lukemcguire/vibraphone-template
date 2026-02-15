@@ -51,3 +51,6 @@ implementation_map.md
 # Coding agents
 .agents/
 .claude/
+
+# Compiled binary
+src/zombiecrawl

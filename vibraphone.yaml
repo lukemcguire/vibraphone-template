@@ -14,8 +14,8 @@ quality_gate:
   require_lint: true
   require_review: true
   review_severity_threshold: error
-  max_test_attempts: 5
-  max_review_attempts: 3
+  max_test_attempts: 10
+  max_review_attempts: 5
 worktree:
   base_branch: main
   prefix: feat/
