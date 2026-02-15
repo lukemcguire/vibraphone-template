@@ -62,12 +62,14 @@ C4Component
     Container_Boundary(app, "ZombieCrawl CLI") {
         Component(main, "main", "Go", "CLI entry point")
         Component(crawler, "crawler", "Go", "Concurrent crawl engine with worker pool")
+        Component(events, "crawler/events", "Go", "Progress event types for TUI integration")
         Component(extract, "crawler/extract", "Go", "HTML tokenizer-based link extraction")
         Component(urlutil, "urlutil", "Go", "URL filtering, normalization, domain checks")
         Component(result, "result", "Go", "Link result types and output formatting")
     }
     Rel(main, crawler, "Starts crawl")
     Rel(main, result, "Prints results to stdout")
+    Rel(crawler, events, "Emits progress events")
     Rel(crawler, extract, "Extracts links from pages")
     Rel(crawler, urlutil, "Filters and classifies URLs")
     Rel(extract, urlutil, "Normalizes discovered URLs")
@@ -97,6 +99,14 @@ classDiagram
         []string Links
         *LinkResult Result
         error Err
+    }
+    class CrawlEvent {
+        string URL
+        int StatusCode
+        string Error
+        int Checked
+        int Broken
+        bool IsExternal
     }
     class LinkResult {
         string URL
@@ -136,7 +146,7 @@ sequenceDiagram
     participant T as Target Website
 
     U->>M: zombiecrawl [flags] <url>
-    M->>C: New(cfg)
+    M->>C: New(cfg, progressCh)
     M->>C: Run(ctx)
     C->>W: Launch N workers
     C->>W: Seed start URL as CrawlJob
