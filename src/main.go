@@ -42,8 +42,7 @@ func main() {
 		RequestTimeout: 10 * time.Second,
 	}
 
-	c := crawler.New(cfg)
-	fmt.Printf("Crawling %s with %d workers...\n", rawURL, *concurrency)
+	c := crawler.New(cfg, nil)
 
 	results, err := c.Run(ctx)
 	if err != nil && ctx.Err() == nil {
@@ -52,7 +51,7 @@ func main() {
 	}
 
 	if ctx.Err() != nil {
-		fmt.Println("\nCrawl interrupted. Showing partial results...")
+		fmt.Fprintln(os.Stderr, "\nCrawl interrupted. Showing partial results...")
 	}
 
 	result.PrintResults(os.Stdout, results)

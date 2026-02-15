@@ -62,7 +62,7 @@ func TestCrawlerIntegration(t *testing.T) {
 		RequestTimeout: 5 * time.Second,
 	}
 
-	c := crawler.New(cfg)
+	c := crawler.New(cfg, nil)
 	result, err := c.Run(context.Background())
 	if err != nil {
 		t.Fatalf("Run() returned error: %v", err)
@@ -124,7 +124,7 @@ func TestCrawlerDeduplication(t *testing.T) {
 		RequestTimeout: 5 * time.Second,
 	}
 
-	c := crawler.New(cfg)
+	c := crawler.New(cfg, nil)
 	result, err := c.Run(context.Background())
 	if err != nil {
 		t.Fatalf("Run() returned error: %v", err)
@@ -151,7 +151,7 @@ func TestCrawlerCancellation(t *testing.T) {
 		RequestTimeout: 5 * time.Second,
 	}
 
-	c := crawler.New(cfg)
+	c := crawler.New(cfg, nil)
 
 	// Cancel context immediately
 	ctx, cancel := context.WithCancel(context.Background())

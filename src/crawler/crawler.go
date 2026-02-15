@@ -14,16 +14,18 @@ import (
 
 // Crawler coordinates BFS link checking with a concurrent worker pool.
 type Crawler struct {
-	cfg     Config
-	client  *http.Client
-	visited sync.Map
-	results []result.LinkResult
-	mu      sync.Mutex
-	total   int
+	cfg        Config
+	client     *http.Client
+	visited    sync.Map
+	results    []result.LinkResult
+	mu         sync.Mutex
+	total      int
+	progressCh chan<- CrawlEvent
 }
 
 // New creates a Crawler with the given configuration.
-func New(cfg Config) *Crawler {
+// The progressCh parameter is optional; pass nil to disable progress events.
+func New(cfg Config, progressCh chan<- CrawlEvent) *Crawler {
 	if cfg.Concurrency <= 0 {
 		cfg.Concurrency = 17
 	}
@@ -32,8 +34,9 @@ func New(cfg Config) *Crawler {
 	}
 
 	return &Crawler{
-		cfg:    cfg,
-		client: &http.Client{},
+		cfg:        cfg,
+		client:     &http.Client{},
+		progressCh: progressCh,
 	}
 }
 
@@ -98,11 +101,24 @@ func (c *Crawler) Run(ctx context.Context) (*result.Result, error) {
 			c.mu.Lock()
 			c.results = append(c.results, *cr.Result)
 			c.mu.Unlock()
-			fmt.Printf("  Checked: %s -> %d\n", cr.Job.URL, cr.Result.StatusCode)
-		} else if cr.Err != nil {
-			fmt.Printf("  Checked: %s -> ERROR: %v\n", cr.Job.URL, cr.Err)
-		} else {
-			fmt.Printf("  Checked: %s -> OK\n", cr.Job.URL)
+		}
+
+		if c.progressCh != nil {
+			evt := CrawlEvent{
+				URL:        cr.Job.URL,
+				IsExternal: cr.Job.IsExternal,
+				Checked:    c.total,
+			}
+			if cr.Result != nil {
+				evt.StatusCode = cr.Result.StatusCode
+				evt.Error = cr.Result.Error
+				c.mu.Lock()
+				evt.Broken = len(c.results)
+				c.mu.Unlock()
+			} else if cr.Err != nil {
+				evt.Error = cr.Err.Error()
+			}
+			c.progressCh <- evt
 		}
 
 		// Enqueue discovered links from internal pages.
