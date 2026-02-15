@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/lukemcguire/zombiecrawl/result"
-	"github.com/lukemcguire/zombiecrawl/urlutil"
 )
 
 // Config holds crawler configuration.
@@ -166,16 +165,7 @@ func CheckURL(ctx context.Context, client *http.Client, job CrawlJob, cfg Config
 		return CrawlResult{Job: job, Links: []string{}}
 	}
 
-	// Filter links: separate internal and external
-	var internalLinks []string
-	baseHost := resp.Request.URL.Host
-	for _, link := range links {
-		if urlutil.IsSameDomain(link, baseHost) {
-			internalLinks = append(internalLinks, link)
-		}
-	}
-
-	return CrawlResult{Job: job, Links: internalLinks}
+	return CrawlResult{Job: job, Links: links}
 }
 
 // DefaultConfig returns a Config with sensible defaults.
