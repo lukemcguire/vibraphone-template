@@ -96,6 +96,10 @@ stateDiagram-v2
 4. Never modify files outside your active worktree.
 5. Never work on a task that isn't `in_progress` in Beads.
 6. Never call `import_gsd_plan` before `configure_stack`.
+7. Never `cd` into a worktree directory. Use absolute paths or the `cwd`
+   parameter instead. Worktrees are removed by `merge_to_main` and
+   `abandon_task` — if your shell CWD is inside a deleted worktree, all
+   subsequent shell commands will fail.
 
 ---
 

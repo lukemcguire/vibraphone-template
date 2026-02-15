@@ -119,7 +119,16 @@ async def merge_to_main(task_id: str) -> dict:
     # 6. Clear session
     session.clear_task()
 
-    result = {"status": "merged", "branch": branch, "merged_into": base}
+    result = {
+        "status": "merged",
+        "branch": branch,
+        "merged_into": base,
+        "warning": (
+            f"Worktree at worktrees/{task_id} has been removed. "
+            "If your shell CWD was inside that worktree, it is now invalid. "
+            f"Run: cd {root}"
+        ),
+    }
     session.audit_log("merge_to_main", {"task_id": task_id}, "ok", result)
     return result
 
