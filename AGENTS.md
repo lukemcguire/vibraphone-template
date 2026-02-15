@@ -8,6 +8,8 @@ run raw `git commit` — use `attempt_commit`. Never skip code review — use
 
 Planning happens through GSD slash commands. Execution happens through
 Vibraphone MCP tools. The tools enforce the rules — you follow the tools.
+Each tool's response includes `next_steps` telling you what to do next —
+follow them.
 
 ---
 
@@ -17,7 +19,7 @@ Vibraphone MCP tools. The tools enforce the rules — you follow the tools.
 
 | Tool              | Inputs              | Returns                                                                          | Notes                                     |
 | ----------------- | ------------------- | -------------------------------------------------------------------------------- | ----------------------------------------- |
-| `import_gsd_plan` | `phase_number: int` | `{"tasks_created": [...], "dependencies": [...], "diagram_update_needed": bool}` | Parses GSD PLAN.md XML, creates br issues |
+| `import_gsd_plan` | `phase_number: int` | `{"tasks_created": [...], "dependencies": [...], "diagram_update_needed": bool}` | Parses GSD PLAN.md XML, creates br issues. Blocked if stack not configured. |
 
 ### Task Management Tools (thin br wrappers)
 
@@ -39,10 +41,11 @@ Vibraphone MCP tools. The tools enforce the rules — you follow the tools.
 
 ### Worktree / Git Tools
 
-| Tool          | Inputs         | Returns                               | Notes                                                                       |
-| ------------- | -------------- | ------------------------------------- | --------------------------------------------------------------------------- |
-| `start_task`  | `task_id: str` | `{"worktree": path, "branch": name}`  | `br update --status in_progress` + `just start-task` + updates session.json |
-| `finish_task` | `task_id: str` | `{"pushed": branch, "cleaned": bool}` | `just finish-task` + optional worktree cleanup                              |
+| Tool             | Inputs         | Returns                                                                           | Notes                                                                                          |
+| ---------------- | -------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `start_task`     | `task_id: str` | `{"worktree", "branch", "task", "plan", "architecture", "recent_commits", "next_steps"}` | Creates worktree, loads context bundle, returns TDD workflow steps. Follow `next_steps`.        |
+| `finish_task`    | `task_id: str` | `{"pushed": branch, "cleaned": bool}`                                             | Pushes branch to remote + optional worktree cleanup. For PR-based workflows.                   |
+| `merge_to_main`  | `task_id: str` | `{"status": "merged", "branch", "merged_into"}`                                  | Local --no-ff merge into main, removes worktree and branch. For local workflows.               |
 
 ### Stack Configuration Tools
 
@@ -54,11 +57,12 @@ Vibraphone MCP tools. The tools enforce the rules — you follow the tools.
 
 | Tool                  | Inputs                           | Returns                                                                          | Circuit Breaker                  |
 | --------------------- | -------------------------------- | -------------------------------------------------------------------------------- | -------------------------------- |
-| `run_tests`           | `component?: str`, `scope?: str` | `{"status": "pass"\|"fail"\|"ESCALATED", "output": ..., "attempt": n}`           | `max_test_attempts`              |
-| `run_lint`            | `component?: str`                | `{"status": "pass"\|"fail", "issues": [...]}`                                    | —                                |
-| `run_format`          | `component?: str`                | `{"status": "formatted"\|"error", "output": ...}`                                | —                                |
-| `request_code_review` | — (reviews staged changes)       | `{"status": "APPROVED"\|"REJECTED"\|"ESCALATED", "issues": [...], "attempt": n}` | `max_review_attempts`            |
-| `attempt_commit`      | `message: str`                   | `{"status": "committed"\|"rejected", "reason?": ...}`                            | Requires prior `APPROVED` review |
+| `run_tests`           | `component?: str`, `scope?: str`          | `{"status": "pass"\|"fail"\|"ESCALATED", "output": ..., "attempt": n}`           | `max_test_attempts`              |
+| `run_lint`            | `component?: str`                         | `{"status": "pass"\|"fail", "issues": [...]}`                                    | —                                |
+| `run_format`          | `component?: str`                         | `{"status": "formatted"\|"error", "output": ...}`                                | —                                |
+| `git_stage`           | `paths?: list[str]`, `all?: bool`         | `{"status": "staged", "staged": [...], "warnings": [...]}`                       | Blocks sensitive files (.env, .pem, etc.) |
+| `request_code_review` | — (reviews staged changes)                | `{"status": "APPROVED"\|"REJECTED"\|"ESCALATED", "issues": [...], "attempt": n}` | `max_review_attempts`            |
+| `attempt_commit`      | `message: str`                            | `{"status": "committed"\|"rejected", "next_steps": [...]}`                       | Requires prior `APPROVED` review. Follow `next_steps`. |
 
 ---
 
@@ -67,13 +71,15 @@ Vibraphone MCP tools. The tools enforce the rules — you follow the tools.
 ```mermaid
 stateDiagram-v2
     [*] --> PLAN_IMPORTED: import_gsd_plan
-    PLAN_IMPORTED --> TASK_CLAIMED: start_task
+    PLAN_IMPORTED --> TASK_CLAIMED: start_task (returns context + next_steps)
     TASK_CLAIMED --> TDD_LOOP: write test
     TDD_LOOP --> TDD_LOOP: run_tests (fail)
-    TDD_LOOP --> REVIEW: run_tests (pass) + run_lint (pass)
+    TDD_LOOP --> STAGING: run_tests (pass) + run_lint (pass)
+    STAGING --> REVIEW: git_stage → request_code_review
     REVIEW --> TDD_LOOP: request_code_review (REJECTED)
-    REVIEW --> COMMITTED: attempt_commit (APPROVED)
-    COMMITTED --> TASK_COMPLETE: complete_task
+    REVIEW --> COMMITTED: attempt_commit (APPROVED, returns next_steps)
+    COMMITTED --> MERGED: merge_to_main
+    MERGED --> TASK_COMPLETE: complete_task
     TASK_COMPLETE --> TASK_CLAIMED: next_ready + start_task
     TDD_LOOP --> ESCALATED: circuit breaker (max attempts)
     REVIEW --> ESCALATED: circuit breaker (max attempts)
@@ -84,10 +90,12 @@ stateDiagram-v2
 
 ## Prohibited Actions
 
-1. Never commit directly with `git commit`. Always use `attempt_commit`.
-2. Never skip code review before committing.
-3. Never modify files outside your active worktree.
-4. Never work on a task that isn't `in_progress` in Beads.
+1. Never run raw `git add`. Always use `git_stage`.
+2. Never run raw `git commit`. Always use `attempt_commit`.
+3. Never skip code review before committing.
+4. Never modify files outside your active worktree.
+5. Never work on a task that isn't `in_progress` in Beads.
+6. Never call `import_gsd_plan` before `configure_stack`.
 
 ---
 
