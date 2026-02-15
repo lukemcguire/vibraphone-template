@@ -34,3 +34,18 @@ Each ADR follows this structure:
 - **Consequences:** Agents must use MCP tools for all git, test, and review
   operations. Direct shell commands for these operations are prohibited. This
   adds overhead but guarantees quality gate enforcement.
+
+## ADR-002: Use golang.org/x/net for HTML Parsing
+
+- **Date:** 2026-02-15
+- **Status:** Accepted
+- **Context:** The crawler needs to extract links from HTML pages. Go's standard
+  library does not include an HTML tokenizer/parser. The two main options are
+  golang.org/x/net/html (official Go sub-repository) and third-party libraries
+  like goquery (which itself wraps x/net/html).
+- **Decision:** Use golang.org/x/net/html directly for HTML tokenization and
+  link extraction.
+- **Consequences:** Minimal dependency footprint — x/net is maintained by the Go
+  team with the same compatibility guarantees as the standard library. Using the
+  tokenizer directly gives fine-grained control over parsing without the overhead
+  of a full DOM tree.
