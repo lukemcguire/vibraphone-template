@@ -346,6 +346,10 @@ async def request_code_review(
             "issues": [],
             "attempt": current_attempts,
             "reason": f"Max review attempts ({max_attempts}) exceeded. Task blocked.",
+            "next_steps": [
+                "1. Stop working on this task — it is now blocked",
+                "2. Call next_ready() to get a different task",
+            ],
         }
         session.audit_log("request_code_review", {}, "escalated", result)
         return result
@@ -456,6 +460,22 @@ async def request_code_review(
     }
     if "parse_error" in review_result:
         result["parse_error"] = review_result["parse_error"]
+
+    # Add next_steps based on review status
+    if status == "APPROVED":
+        result["next_steps"] = [
+            "1. attempt_commit(message='your commit message') to commit",
+        ]
+    elif status == "REJECTED":
+        result["next_steps"] = [
+            "1. Fix the issues listed above",
+            "2. request_code_review(stage_all=True) to re-submit",
+        ]
+    elif status == "ESCALATED":
+        result["next_steps"] = [
+            "1. Stop working on this task — it is now escalated",
+            "2. Call next_ready() to get a different task",
+        ]
 
     session.audit_log("request_code_review", {}, status.lower(), result)
     return result

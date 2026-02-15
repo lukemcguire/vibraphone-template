@@ -7,9 +7,8 @@ run raw `git commit` — use `attempt_commit`. Never skip code review — use
 `request_code_review`. Never guess at task priority — use `next_ready`.
 
 Planning happens through GSD slash commands. Execution happens through
-Vibraphone MCP tools. The tools enforce the rules — you follow the tools.
-Each tool's response includes `next_steps` telling you what to do next —
-follow them.
+Vibraphone MCP tools. The tools enforce the rules — you follow the tools. Each
+tool's response includes `next_steps` telling you what to do next — follow them.
 
 ---
 
@@ -17,8 +16,8 @@ follow them.
 
 ### Planning Bridge Tools
 
-| Tool              | Inputs              | Returns                                                                          | Notes                                     |
-| ----------------- | ------------------- | -------------------------------------------------------------------------------- | ----------------------------------------- |
+| Tool              | Inputs              | Returns                                                                          | Notes                                                                       |
+| ----------------- | ------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
 | `import_gsd_plan` | `phase_number: int` | `{"tasks_created": [...], "dependencies": [...], "diagram_update_needed": bool}` | Parses GSD PLAN.md XML, creates br issues. Blocked if stack not configured. |
 
 ### Task Management Tools (thin br wrappers)
@@ -41,11 +40,11 @@ follow them.
 
 ### Worktree / Git Tools
 
-| Tool           | Inputs         | Returns                                                                           | Notes                                                                                          |
-| -------------- | -------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `start_task`   | `task_id: str` | `{"worktree", "branch", "task", "plan", "architecture", "recent_commits", "next_steps"}` | Creates worktree from local main, loads context bundle, returns TDD workflow steps. Follow `next_steps`. |
-| `merge_task`   | `task_id: str` | `{"status": "merged"\|"conflict", "branch", "merged_into", "next_steps"}` | Rebases onto main, merges with --no-ff. On conflict, returns conflicted_files and recovery steps. Follow `next_steps`. |
-| `cleanup_task` | `task_id: str` | `{"status": "cleaned", "worktree_removed", "branch_deleted", "next_steps"}` | Removes worktree and deletes branch. Call after merge_task succeeds and you've cd'd to project root. |
+| Tool           | Inputs         | Returns                                                                                  | Notes                                                                                                                  |
+| -------------- | -------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `start_task`   | `task_id: str` | `{"worktree", "branch", "task", "plan", "architecture", "recent_commits", "next_steps"}` | Creates worktree from local main, loads context bundle, returns TDD workflow steps. Follow `next_steps`.               |
+| `merge_task`   | `task_id: str` | `{"status": "merged"\|"conflict", "branch", "merged_into", "next_steps"}`                | Rebases onto main, merges with --no-ff. On conflict, returns conflicted_files and recovery steps. Follow `next_steps`. |
+| `cleanup_task` | `task_id: str` | `{"status": "cleaned", "worktree_removed", "branch_deleted", "next_steps"}`              | Removes worktree and deletes branch. Call after merge_task succeeds and you've cd'd to project root.                   |
 
 ### Stack Configuration Tools
 
@@ -55,37 +54,47 @@ follow them.
 
 ### Quality Gate Tools
 
-| Tool                  | Inputs                                          | Returns                                                                          | Circuit Breaker                  |
-| --------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------- |
-| `run_tests`           | `component?: str`, `scope?: str`                | `{"status": "pass"\|"fail"\|"ESCALATED", "output": ..., "attempt": n}`           | `max_test_attempts`              |
-| `run_lint`            | `component?: str`                               | `{"status": "pass"\|"fail", "issues": [...]}`                                    | —                                |
-| `run_format`          | `component?: str`                               | `{"status": "formatted"\|"error", "output": ...}`                                | —                                |
-| `request_code_review` | `paths?: list[str]`, `stage_all?: bool`         | `{"status": "APPROVED"\|"REJECTED"\|"ESCALATED", "issues": [...], "staged": [...], "attempt": n}` | `max_review_attempts`. Stages + reviews in one step. |
-| `attempt_commit`      | `message: str`                                  | `{"status": "committed"\|"rejected", "next_steps": [...]}`                       | Requires prior `APPROVED` review. Follow `next_steps`. |
+| Tool                  | Inputs                                  | Returns                                                                                           | Circuit Breaker                                        |
+| --------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `run_tests`           | `component?: str`, `scope?: str`        | `{"status": "pass"\|"fail"\|"ESCALATED", "output": ..., "attempt": n}`                            | `max_test_attempts`                                    |
+| `run_lint`            | `component?: str`                       | `{"status": "pass"\|"fail", "issues": [...]}`                                                     | —                                                      |
+| `run_format`          | `component?: str`                       | `{"status": "formatted"\|"error", "output": ...}`                                                 | —                                                      |
+| `request_code_review` | `paths?: list[str]`, `stage_all?: bool` | `{"status": "APPROVED"\|"REJECTED"\|"ESCALATED", "issues": [...], "staged": [...], "attempt": n}` | `max_review_attempts`. Stages + reviews in one step.   |
+| `attempt_commit`      | `message: str`                          | `{"status": "committed"\|"rejected", "next_steps": [...]}`                                        | Requires prior `APPROVED` review. Follow `next_steps`. |
 
 ---
 
 ## Workflow State Machine
 
+> **CRITICAL**: Every MCP tool returns `next_steps` in its response. Always read and follow these steps. They override any other guidance.
+
 ```mermaid
 stateDiagram-v2
-    [*] --> PLAN_IMPORTED: import_gsd_plan
-    PLAN_IMPORTED --> TASK_CLAIMED: start_task (returns context + next_steps)
-    TASK_CLAIMED --> TDD_LOOP: write test
-    TDD_LOOP --> TDD_LOOP: run_tests (fail)
-    TDD_LOOP --> STAGING: run_tests (pass) + run_lint (pass)
-    STAGING --> REVIEW: request_code_review
-    REVIEW --> TDD_LOOP: request_code_review (REJECTED)
-    REVIEW --> COMMITTED: attempt_commit (APPROVED, returns next_steps)
+    [*] --> RECOVER: recover_session
+    RECOVER --> TASK_CLAIMED: action=resume → get_task_context
+    RECOVER --> TASK_CLAIMED: action=none → next_ready → start_task
+
+    PLAN_IMPORTED --> TASK_CLAIMED: start_task
+    TASK_CLAIMED --> TDD_RED: write failing test
+    TDD_RED --> TDD_GREEN: run_tests (fail) → implement
+    TDD_GREEN --> TDD_GREEN: run_tests (fail) → fix
+    TDD_GREEN --> LINT_PASS: run_tests (pass) → run_lint (pass)
+    TDD_GREEN --> LINT_FAIL: run_tests (pass) → run_lint (fail)
+    LINT_FAIL --> TDD_GREEN: fix lint → run_lint
+    LINT_PASS --> REVIEW: request_code_review
+    REVIEW --> REJECTED: issues found
+    REJECTED --> TDD_GREEN: fix issues → run_tests
+    REVIEW --> COMMITTED: APPROVED → attempt_commit
     COMMITTED --> MERGED: merge_task
     MERGED --> CONFLICT: rebase conflict
     CONFLICT --> MERGED: resolve + retry
-    MERGED --> CLEANED: cleanup_task (after cd to project root)
+    MERGED --> CLEANED: cleanup_task
     CLEANED --> TASK_COMPLETE: complete_task
-    TASK_COMPLETE --> TASK_CLAIMED: next_ready + start_task
-    TDD_LOOP --> ESCALATED: circuit breaker (max attempts)
-    REVIEW --> ESCALATED: circuit breaker (max attempts)
-    ESCALATED --> TASK_CLAIMED: next_ready (skip to different task)
+    TASK_COMPLETE --> TASK_CLAIMED: next_ready → start_task
+
+    TDD_GREEN --> ESCALATED: run_tests ESCALATED
+    REVIEW --> ESCALATED: request_code_review ESCALATED
+    ESCALATED --> TASK_CLAIMED: abandon_task → next_ready
 ```
 
 ---

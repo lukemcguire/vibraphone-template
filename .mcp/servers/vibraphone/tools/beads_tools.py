@@ -18,6 +18,19 @@ async def list_tasks(status_filter: str | None = None) -> dict:
 async def next_ready() -> dict:
     """Get the next task whose dependencies are satisfied and is ready to start."""
     result = await br_client.br_ready()
+
+    # Add next_steps if a task was returned
+    task_id = None
+    if isinstance(result, dict):
+        task_id = result.get("id") or result.get("issue_id")
+    elif isinstance(result, list) and result:
+        task_id = result[0].get("id") or result[0].get("issue_id")
+
+    if task_id:
+        result["next_steps"] = [
+            f"1. start_task(task_id='{task_id}') to begin working on this task",
+        ]
+
     session.audit_log("next_ready", {}, "ok", result)
     return result
 
@@ -28,6 +41,11 @@ async def complete_task(task_id: str) -> dict:
     if config.beads.auto_sync:
         await br_client.br_sync()
     session.clear_task()
+
+    result["next_steps"] = [
+        "1. Call next_ready() to pick up the next task",
+    ]
+
     session.audit_log("complete_task", {"task_id": task_id}, "ok", result)
     return result
 
@@ -36,6 +54,11 @@ async def abandon_task(task_id: str) -> dict:
     """Abandon an in-progress task — resets to open and cleans up."""
     result = await br_client.br_update(task_id, status="open")
     session.clear_task()
+
+    result["next_steps"] = [
+        "1. Call next_ready() to get a different task",
+    ]
+
     session.audit_log("abandon_task", {"task_id": task_id}, "ok", result)
     return result
 
@@ -76,9 +99,18 @@ async def get_task_context(task_id: str) -> dict:
     task = await br_client.br_show(task_id)
     root = project_root()
 
+    # Unwrap br_show's {"items": [...]} envelope to get the actual task dict
+    task_item = task
+    if isinstance(task, dict) and "items" in task:
+        items = task["items"]
+        if items:
+            task_item = items[0]
+
     # Extract plan label (set by bridge_tools during import)
     plan_content: str | None = None
-    labels = task.get("labels", "") or ""
+    labels = task_item.get("labels", []) or []
+    if isinstance(labels, list):
+        labels = " ".join(labels)
     match = _PLAN_LABEL_RE.search(labels)
     if match:
         plan_id = match.group(1)  # e.g. "1-2"
@@ -109,6 +141,13 @@ async def get_task_context(task_id: str) -> dict:
         "plan": plan_content,
         "architecture": architecture,
         "recent_commits": recent_commits,
+        "next_steps": [
+            "1. Read the plan and identify the first deliverable",
+            "2. Write a failing test, then run_tests()",
+            "3. Implement the code to make tests pass",
+            "4. run_tests() + run_lint() to verify quality",
+            "5. request_code_review(stage_all=True) → attempt_commit",
+        ],
     }
     session.audit_log("get_task_context", {"task_id": task_id}, "ok", result)
     return result
@@ -127,6 +166,29 @@ async def triage() -> dict:
     if config.beads.auto_sync:
         await br_client.br_sync()
     result = await br_client.bv_run("--robot-triage")
+
+    # Extract recommended task from triage output
+    recommended_id = None
+    if isinstance(result, dict):
+        # Try common field names for recommended task
+        rec = result.get("recommended") or result.get("next_task") or result.get("top_pick")
+        if isinstance(rec, dict):
+            recommended_id = rec.get("id") or rec.get("issue_id")
+        elif isinstance(rec, str):
+            recommended_id = rec
+        # Also check for items list
+        if not recommended_id:
+            items = result.get("items") or result.get("ranked") or []
+            if items and isinstance(items, list):
+                first = items[0]
+                if isinstance(first, dict):
+                    recommended_id = first.get("id") or first.get("issue_id")
+
+    if recommended_id:
+        result["next_steps"] = [
+            f"1. start_task(task_id='{recommended_id}') to begin the recommended task",
+        ]
+
     session.audit_log("triage", {}, "ok", result)
     return result
 
@@ -144,6 +206,12 @@ async def plan_parallel() -> dict:
     if config.beads.auto_sync:
         await br_client.br_sync()
     result = await br_client.bv_run("--robot-plan")
+
+    result["next_steps"] = [
+        "1. Launch parallel agents for each track",
+        "2. Each agent calls start_task() on their assigned task",
+    ]
+
     session.audit_log("plan_parallel", {}, "ok", result)
     return result
 
@@ -190,5 +258,18 @@ async def add_task(
         deps_created.append({"blocked": blocked_id, "blocker": new_id})
 
     result["dependencies_added"] = deps_created
+
+    # Check if dependencies are satisfied for next_steps guidance
+    has_deps = bool(depends_on)
+    if has_deps:
+        result["next_steps"] = [
+            "1. Wait for dependencies to complete, or call next_ready() to find work",
+        ]
+    else:
+        result["next_steps"] = [
+            f"1. start_task(task_id='{new_id}') to begin working on this task",
+            "2. Or call next_ready() to get the next ready task",
+        ]
+
     session.audit_log("add_task", {"title": title, "type": type_}, "ok", result)
     return result

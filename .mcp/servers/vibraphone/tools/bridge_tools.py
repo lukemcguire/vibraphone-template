@@ -248,6 +248,9 @@ async def import_gsd_plan(phase_number: int) -> dict:
         return {
             "error": "No components configured in vibraphone.yaml. Run configure_stack first.",
             "action_required": "configure_stack",
+            "next_steps": [
+                "1. Call configure_stack(components={...}) to set up the project",
+            ],
         }
 
     phase_dir = _resolve_phase_dir(phase_number)
@@ -274,17 +277,29 @@ async def import_gsd_plan(phase_number: int) -> dict:
             "already_imported": True,
             "skipped_plans": skipped,
             "message": f"All plans for phase {phase_number} already imported.",
+            "next_steps": [
+                "1. next_ready() to get the first task to work on",
+            ],
         }
 
     plan_tasks, plan_deps, tasks_created, has_new_components = await _parse_and_create_tasks(plan_files)
 
     dependencies = await _setup_plan_dependencies(plan_tasks, plan_deps, plan_tasks)
 
+    next_steps = []
+    if has_new_components:
+        next_steps.append("1. This phase includes new components — update docs/ARCHITECTURE.md diagrams when adding services/endpoints")
+        next_steps.append("2. next_ready() to get the first task to work on")
+    else:
+        next_steps.append("1. next_ready() to get the first task to work on")
+    next_steps.append(f"{len(next_steps) + 1}. Or list_tasks() to see all imported tasks")
+
     result = {
         "tasks_created": tasks_created,
         "dependencies": dependencies,
         "diagram_update_needed": has_new_components,
         "skipped_plans": skipped,
+        "next_steps": next_steps,
     }
 
     await br_client.br_sync()

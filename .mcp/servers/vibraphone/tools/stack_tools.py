@@ -292,6 +292,10 @@ async def configure_stack(
             "status": "preview",
             "justfile": justfile_content,
             "vibraphone_yaml": yaml_content,
+            "next_steps": [
+                "1. Review the proposed Justfile and vibraphone.yaml",
+                "2. Call configure_stack(..., preview=False) to apply",
+            ],
         }
         if stitch_project_id:
             result["stitch_note"] = (
@@ -326,4 +330,7 @@ async def configure_stack(
         "vibraphone_yaml_path": str(yaml_path),
         "components": list(components.keys()),
         "stitch_config": mcp_sync_result,
+        "next_steps": [
+            "1. import_gsd_plan(phase_number) to import phase tasks",
+        ],
     }

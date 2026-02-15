@@ -22,7 +22,13 @@ async def recover_session() -> dict:
     state = session.load_session()
 
     if state is None or state.active_task is None:
-        result: dict = {"status": "clean", "action": "none"}
+        result: dict = {
+            "status": "clean",
+            "action": "none",
+            "next_steps": [
+                "1. Call next_ready() to get the next task to work on",
+            ],
+        }
         session.audit_log("recover_session", {}, "ok", result)
         return result
 
@@ -55,6 +61,10 @@ async def recover_session() -> dict:
                 "test_attempts": state.test_attempts,
                 "review_attempts": state.review_attempts,
             },
+            "next_steps": [
+                f"1. get_task_context(task_id='{task_id}') for full context",
+                "2. Continue TDD loop or quality gate from where you left off",
+            ],
         }
         session.audit_log("recover_session", {"task_id": task_id}, "ok", result)
         return result
@@ -74,6 +84,9 @@ async def recover_session() -> dict:
             "action": "cleaned_up",
             "task_id": task_id,
             "reason": "task no longer in_progress",
+            "next_steps": [
+                "1. Call next_ready() to get a new task",
+            ],
         }
         session.audit_log("recover_session", {"task_id": task_id}, "ok", result)
         return result
@@ -87,6 +100,9 @@ async def recover_session() -> dict:
             "action": "cleaned_up",
             "task_id": task_id,
             "reason": "worktree missing",
+            "next_steps": [
+                "1. Call next_ready() to get a new task",
+            ],
         }
         session.audit_log("recover_session", {"task_id": task_id}, "ok", result)
         return result
@@ -102,6 +118,10 @@ async def recover_session() -> dict:
             "test_attempts": state.test_attempts,
             "review_attempts": state.review_attempts,
         },
+        "next_steps": [
+            f"1. get_task_context(task_id='{task_id}') for full context",
+            "2. Decide whether to continue or abandon_task() and start fresh",
+        ],
     }
     session.audit_log("recover_session", {"task_id": task_id}, "ok", result)
     return result

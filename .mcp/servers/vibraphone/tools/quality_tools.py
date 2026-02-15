@@ -62,6 +62,10 @@ async def run_tests(component: str | None = None, scope: str | None = None) -> d
             "status": "ESCALATED",
             "output": f"Max test attempts ({max_attempts}) exceeded. Task blocked.",
             "attempt": attempt,
+            "next_steps": [
+                "1. Stop working on this task — it is now blocked",
+                "2. Call next_ready() to get a different task",
+            ],
         }
         session.audit_log("run_tests", {"component": component, "scope": scope}, "escalated", result)
         return result
@@ -74,6 +78,17 @@ async def run_tests(component: str | None = None, scope: str | None = None) -> d
     status = "pass" if rc == 0 else "fail"
 
     result = {"status": status, "output": output, "attempt": attempt}
+
+    if status == "pass":
+        result["next_steps"] = [
+            "1. run_lint() to check code style",
+        ]
+    else:
+        result["next_steps"] = [
+            "1. Fix the failing tests",
+            "2. run_tests() again to verify",
+        ]
+
     session.audit_log("run_tests", {"component": component, "scope": scope}, status, result)
     return result
 
@@ -90,6 +105,18 @@ async def run_lint(component: str | None = None) -> dict:
         issues.extend(line.strip() for line in output.splitlines() if line.strip())
 
     result = {"status": status, "issues": issues}
+
+    if status == "pass":
+        result["next_steps"] = [
+            "1. If this change adds services/data models/APIs, update diagrams in docs/ARCHITECTURE.md",
+            "2. request_code_review(stage_all=True) to submit for review",
+        ]
+    else:
+        result["next_steps"] = [
+            "1. Fix the lint issues listed above",
+            "2. run_lint() again to verify",
+        ]
+
     session.audit_log("run_lint", {"component": component}, status, result)
     return result
 

@@ -50,6 +50,8 @@ class TestCleanSession:
         result = await recover_session()
         assert result["status"] == "clean"
         assert result["action"] == "none"
+        assert "next_steps" in result
+        assert "next_ready()" in result["next_steps"][0]
 
     @pytest.mark.asyncio
     async def test_clean_session_no_active_task(self):
@@ -61,6 +63,7 @@ class TestCleanSession:
         result = await recover_session()
         assert result["status"] == "clean"
         assert result["action"] == "none"
+        assert "next_steps" in result
 
 
 class TestFreshSession:
@@ -81,6 +84,8 @@ class TestFreshSession:
         assert result["worktree"] == str(worktree_path)
         assert result["attempt_counts"]["test_attempts"] == {"T-1": 2}
         assert result["attempt_counts"]["review_attempts"] == {"T-1": 1}
+        assert "next_steps" in result
+        assert "get_task_context" in result["next_steps"][0]
 
 
 class TestStaleSession:
@@ -105,6 +110,8 @@ class TestStaleSession:
         assert result["status"] == "stale"
         assert result["action"] == "cleaned_up"
         assert result["reason"] == "worktree missing"
+        assert "next_steps" in result
+        assert "next_ready()" in result["next_steps"][0]
         mock_show.assert_called_once_with("T-1")
         mock_update.assert_called_once_with("T-1", status="open")
 
@@ -135,6 +142,8 @@ class TestStaleSession:
         assert result["action"] == "resume"
         assert result["task_id"] == "T-1"
         assert result["worktree"] == str(worktree_path)
+        assert "next_steps" in result
+        assert "get_task_context" in result["next_steps"][0]
 
     @pytest.mark.asyncio
     async def test_stale_session_task_already_closed(self):
@@ -154,6 +163,8 @@ class TestStaleSession:
         assert result["status"] == "stale"
         assert result["action"] == "cleaned_up"
         assert result["reason"] == "task no longer in_progress"
+        assert "next_steps" in result
+        assert "next_ready()" in result["next_steps"][0]
 
         # Session should be cleared
         state = session.load_session()
