@@ -24,9 +24,11 @@ def _isolate_session(tmp_path, monkeypatch):
 @pytest.fixture
 def set_active_task():
     """Helper to write a session with an active task."""
+
     def _inner(task_id="T-1"):
         state = session.SessionState(active_task=task_id)
         session.save_session(state)
+
     return _inner
 
 
@@ -69,6 +71,7 @@ class TestRunTestsCircuitBreaker:
     @pytest.mark.asyncio
     async def test_escalates_after_max_attempts(self, set_active_task, mock_br_update, mock_run_shell, monkeypatch):
         from config import config
+
         monkeypatch.setattr(config.quality_gate, "max_test_attempts", 2)
 
         set_active_task("T-1")
@@ -94,6 +97,7 @@ class TestRunTestsCircuitBreaker:
     @pytest.mark.asyncio
     async def test_sets_task_blocked(self, set_active_task, mock_br_update, mock_run_shell, monkeypatch):
         from config import config
+
         monkeypatch.setattr(config.quality_gate, "max_test_attempts", 1)
 
         set_active_task("T-1")
@@ -114,6 +118,7 @@ class TestRequestCodeReviewCircuitBreaker:
     @pytest.mark.asyncio
     async def test_escalates_after_max_review_attempts(self, set_active_task, mock_br_update, monkeypatch):
         from config import config
+
         monkeypatch.setattr(config.quality_gate, "max_review_attempts", 2)
 
         set_active_task("T-1")
@@ -166,11 +171,15 @@ class TestReviewIssueAggregation:
             patch("tools.review_tools._git_diff_staged_hash", new_callable=AsyncMock, return_value=diff_hash),
             patch("tools.review_tools._get_changed_files", new_callable=AsyncMock, return_value=["foo.py"]),
             patch("tools.review_tools._read_file_contents", return_value="# foo.py content"),
-            patch("tools.review_tools._perform_review", new_callable=AsyncMock, return_value={
-                "status": "REJECTED",
-                "issues": new_issues,
-                "raw_response": "[]",
-            }),
+            patch(
+                "tools.review_tools._perform_review",
+                new_callable=AsyncMock,
+                return_value={
+                    "status": "REJECTED",
+                    "issues": new_issues,
+                    "raw_response": "[]",
+                },
+            ),
             patch("tools.review_tools.Path") as mock_path,
         ):
             # Make constitution and prompt files appear to exist
@@ -185,6 +194,7 @@ class TestReviewIssueAggregation:
             mock_path.side_effect = lambda p: mock_constitution if "CONSTITUTION" in str(p) else mock_prompt
 
             from tools.review_tools import request_code_review
+
             result = await request_code_review()
 
         # Should have 2 unique issues (deduped by rule+file+line)
@@ -209,11 +219,15 @@ class TestReviewIssueAggregation:
             patch("tools.review_tools._git_diff_staged_hash", new_callable=AsyncMock, return_value=diff_hash),
             patch("tools.review_tools._get_changed_files", new_callable=AsyncMock, return_value=["foo.py"]),
             patch("tools.review_tools._read_file_contents", return_value="# foo.py content"),
-            patch("tools.review_tools._perform_review", new_callable=AsyncMock, return_value={
-                "status": "REJECTED",
-                "issues": current_issues,
-                "raw_response": "[]",
-            }),
+            patch(
+                "tools.review_tools._perform_review",
+                new_callable=AsyncMock,
+                return_value={
+                    "status": "REJECTED",
+                    "issues": current_issues,
+                    "raw_response": "[]",
+                },
+            ),
             patch("tools.review_tools.Path") as mock_path,
         ):
             mock_file = MagicMock()
@@ -222,6 +236,7 @@ class TestReviewIssueAggregation:
             mock_path.side_effect = lambda _p: mock_file
 
             from tools.review_tools import request_code_review
+
             result = await request_code_review()
 
         assert result["attempt"] == 1
@@ -235,6 +250,7 @@ class TestAttemptCommit:
     @pytest.mark.asyncio
     async def test_rejects_without_approved_review(self):
         from tools.quality_tools import attempt_commit
+
         result = await attempt_commit("test commit")
         assert result["status"] == "rejected"
         assert "No approved review" in result["reason"]
@@ -250,6 +266,7 @@ class TestAttemptCommit:
 
         with patch("tools.quality_tools._git_diff_staged_hash", new_callable=AsyncMock, return_value="different-hash"):
             from tools.quality_tools import attempt_commit
+
             result = await attempt_commit("test commit")
 
         assert result["status"] == "rejected"
@@ -277,6 +294,7 @@ class TestAttemptCommit:
             patch("asyncio.create_subprocess_exec", new_callable=AsyncMock, return_value=mock_proc),
         ):
             from tools.quality_tools import attempt_commit
+
             result = await attempt_commit("feat: add feature")
 
         assert result["status"] == "committed"
@@ -296,6 +314,7 @@ class TestAttemptCommit:
 
         with patch("tools.quality_tools._git_diff_staged_hash", new_callable=AsyncMock, return_value=review_hash):
             from tools.quality_tools import attempt_commit
+
             result = await attempt_commit("feat: add feature")
 
         assert result["status"] == "rejected"
@@ -318,6 +337,7 @@ class TestHealthCheck:
             patch.object(br_client, "br_list", new_callable=AsyncMock, return_value=tasks),
         ):
             from tools.beads_tools import health_check
+
             result = await health_check()
 
         assert "br_doctor" in result
@@ -339,6 +359,7 @@ class TestHealthCheck:
             patch.object(br_client, "br_list", new_callable=AsyncMock, return_value=tasks),
         ):
             from tools.beads_tools import health_check
+
             result = await health_check()
 
         assert len(result["cycles"]) > 0
@@ -354,6 +375,7 @@ class TestHealthCheck:
             patch.object(br_client, "br_list", new_callable=AsyncMock, return_value=tasks),
         ):
             from tools.beads_tools import health_check
+
             result = await health_check()
 
         assert len(result["orphans"]) == 1
@@ -368,6 +390,7 @@ class TestHealthCheck:
             patch.object(br_client, "br_list", new_callable=AsyncMock, return_value={"tasks": tasks}),
         ):
             from tools.beads_tools import health_check
+
             result = await health_check()
 
         assert result["cycles"] == []

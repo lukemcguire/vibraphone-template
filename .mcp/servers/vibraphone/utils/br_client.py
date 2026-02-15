@@ -191,7 +191,10 @@ async def git_log(branch: str, count: int = 10) -> str | None:
     """Return ``git log --oneline -N branch`` output, or None if branch doesn't exist."""
     # Check if branch exists
     check = await asyncio.create_subprocess_exec(
-        "git", "rev-parse", "--verify", branch,
+        "git",
+        "rev-parse",
+        "--verify",
+        branch,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -200,7 +203,11 @@ async def git_log(branch: str, count: int = 10) -> str | None:
         return None
 
     proc = await asyncio.create_subprocess_exec(
-        "git", "log", "--oneline", f"-{count}", branch,
+        "git",
+        "log",
+        "--oneline",
+        f"-{count}",
+        branch,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )

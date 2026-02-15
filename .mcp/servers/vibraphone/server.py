@@ -18,11 +18,11 @@ from tools.beads_tools import (
     triage,
 )
 from tools.bridge_tools import import_gsd_plan
-from tools.quality_tools import attempt_commit, git_stage, run_format, run_lint, run_tests
+from tools.quality_tools import attempt_commit, run_format, run_lint, run_tests
 from tools.review_tools import request_code_review
 from tools.session_tools import recover_session
 from tools.stack_tools import configure_stack
-from tools.worktree_tools import finish_task, merge_to_main, start_task
+from tools.worktree_tools import cleanup_task, merge_task, start_task
 
 mcp = FastMCP("vibraphone")
 
@@ -37,12 +37,11 @@ for fn in [
     triage,
     plan_parallel,
     start_task,
-    finish_task,
-    merge_to_main,
+    merge_task,
+    cleanup_task,
     run_tests,
     run_lint,
     run_format,
-    git_stage,
     request_code_review,
     attempt_commit,
     import_gsd_plan,

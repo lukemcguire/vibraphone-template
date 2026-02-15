@@ -46,9 +46,7 @@ def project(tmp_path):
     }
     (tmp_path / "vibraphone.yaml").write_text(yaml.dump(yaml_content, default_flow_style=False, sort_keys=False))
 
-    (tmp_path / ".env.example").write_text(
-        "REVIEWER_API_KEY=\nSTITCH_PROJECT_ID=\nSTITCH_API_KEY=\n"
-    )
+    (tmp_path / ".env.example").write_text("REVIEWER_API_KEY=\nSTITCH_PROJECT_ID=\nSTITCH_API_KEY=\n")
 
     return tmp_path
 
@@ -158,9 +156,7 @@ class TestConfigureStackStitch:
         components = {
             "backend": {"language": "python", "root": "./backend"},
         }
-        result = await configure_stack(
-            components, preview=False, stitch_project_id="test-proj-123"
-        )
+        result = await configure_stack(components, preview=False, stitch_project_id="test-proj-123")
 
         assert result["status"] == "configured"
         assert result["stitch_config"]["stitch_enabled"] is True
@@ -185,9 +181,7 @@ class TestConfigureStackStitch:
         components = {
             "backend": {"language": "python", "root": "./backend"},
         }
-        result = await configure_stack(
-            components, preview=True, stitch_project_id="test-proj-123"
-        )
+        result = await configure_stack(components, preview=True, stitch_project_id="test-proj-123")
 
         assert result["status"] == "preview"
         assert "stitch_note" in result
@@ -208,9 +202,7 @@ class TestConfigureStackStitch:
         }
 
         # Enable stitch
-        result = await configure_stack(
-            components, preview=False, stitch_project_id="proj-abc"
-        )
+        result = await configure_stack(components, preview=False, stitch_project_id="proj-abc")
         assert result["stitch_config"]["stitch_enabled"] is True
         mcp_config = json.loads((self.project / ".mcp" / "config.json").read_text())
         assert "stitch" in mcp_config["mcpServers"]
@@ -222,9 +214,7 @@ class TestConfigureStackStitch:
 
         # Manually disable stitch in yaml to test removal
         yaml_data["stitch"]["enabled"] = False
-        (self.project / "vibraphone.yaml").write_text(
-            yaml.dump(yaml_data, default_flow_style=False, sort_keys=False)
-        )
+        (self.project / "vibraphone.yaml").write_text(yaml.dump(yaml_data, default_flow_style=False, sort_keys=False))
 
         result = await configure_stack(components, preview=False)
         assert result["stitch_config"]["stitch_enabled"] is False

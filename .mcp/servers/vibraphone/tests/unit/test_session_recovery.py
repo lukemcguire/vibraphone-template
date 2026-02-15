@@ -96,9 +96,7 @@ class TestStaleSession:
                 new_callable=AsyncMock,
                 return_value={"status": "in_progress"},
             ) as mock_show,
-            patch.object(
-                br_client, "br_update", new_callable=AsyncMock, return_value={}
-            ) as mock_update,
+            patch.object(br_client, "br_update", new_callable=AsyncMock, return_value={}) as mock_update,
         ):
             from tools.session_tools import recover_session
 

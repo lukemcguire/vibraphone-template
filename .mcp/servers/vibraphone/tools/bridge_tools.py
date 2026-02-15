@@ -246,8 +246,7 @@ async def import_gsd_plan(phase_number: int) -> dict:
     """
     if not config.components:
         return {
-            "error": "No components configured in vibraphone.yaml. "
-            "Run configure_stack first.",
+            "error": "No components configured in vibraphone.yaml. Run configure_stack first.",
             "action_required": "configure_stack",
         }
 

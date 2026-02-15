@@ -41,11 +41,11 @@ follow them.
 
 ### Worktree / Git Tools
 
-| Tool             | Inputs         | Returns                                                                           | Notes                                                                                          |
-| ---------------- | -------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `start_task`     | `task_id: str` | `{"worktree", "branch", "task", "plan", "architecture", "recent_commits", "next_steps"}` | Creates worktree, loads context bundle, returns TDD workflow steps. Follow `next_steps`.        |
-| `finish_task`    | `task_id: str` | `{"pushed": branch, "cleaned": bool}`                                             | Pushes branch to remote + optional worktree cleanup. For PR-based workflows.                   |
-| `merge_to_main`  | `task_id: str` | `{"status": "merged", "branch", "merged_into"}`                                  | Local --no-ff merge into main, removes worktree and branch. For local workflows.               |
+| Tool           | Inputs         | Returns                                                                           | Notes                                                                                          |
+| -------------- | -------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `start_task`   | `task_id: str` | `{"worktree", "branch", "task", "plan", "architecture", "recent_commits", "next_steps"}` | Creates worktree from local main, loads context bundle, returns TDD workflow steps. Follow `next_steps`. |
+| `merge_task`   | `task_id: str` | `{"status": "merged"\|"conflict", "branch", "merged_into", "next_steps"}` | Rebases onto main, merges with --no-ff. On conflict, returns conflicted_files and recovery steps. Follow `next_steps`. |
+| `cleanup_task` | `task_id: str` | `{"status": "cleaned", "worktree_removed", "branch_deleted", "next_steps"}` | Removes worktree and deletes branch. Call after merge_task succeeds and you've cd'd to project root. |
 
 ### Stack Configuration Tools
 
@@ -55,14 +55,13 @@ follow them.
 
 ### Quality Gate Tools
 
-| Tool                  | Inputs                           | Returns                                                                          | Circuit Breaker                  |
-| --------------------- | -------------------------------- | -------------------------------------------------------------------------------- | -------------------------------- |
-| `run_tests`           | `component?: str`, `scope?: str`          | `{"status": "pass"\|"fail"\|"ESCALATED", "output": ..., "attempt": n}`           | `max_test_attempts`              |
-| `run_lint`            | `component?: str`                         | `{"status": "pass"\|"fail", "issues": [...]}`                                    | —                                |
-| `run_format`          | `component?: str`                         | `{"status": "formatted"\|"error", "output": ...}`                                | —                                |
-| `git_stage`           | `paths?: list[str]`, `all?: bool`         | `{"status": "staged", "staged": [...], "warnings": [...]}`                       | Blocks sensitive files (.env, .pem, etc.) |
-| `request_code_review` | — (reviews staged changes)                | `{"status": "APPROVED"\|"REJECTED"\|"ESCALATED", "issues": [...], "attempt": n}` | `max_review_attempts`            |
-| `attempt_commit`      | `message: str`                            | `{"status": "committed"\|"rejected", "next_steps": [...]}`                       | Requires prior `APPROVED` review. Follow `next_steps`. |
+| Tool                  | Inputs                                          | Returns                                                                          | Circuit Breaker                  |
+| --------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------- |
+| `run_tests`           | `component?: str`, `scope?: str`                | `{"status": "pass"\|"fail"\|"ESCALATED", "output": ..., "attempt": n}`           | `max_test_attempts`              |
+| `run_lint`            | `component?: str`                               | `{"status": "pass"\|"fail", "issues": [...]}`                                    | —                                |
+| `run_format`          | `component?: str`                               | `{"status": "formatted"\|"error", "output": ...}`                                | —                                |
+| `request_code_review` | `paths?: list[str]`, `stage_all?: bool`         | `{"status": "APPROVED"\|"REJECTED"\|"ESCALATED", "issues": [...], "staged": [...], "attempt": n}` | `max_review_attempts`. Stages + reviews in one step. |
+| `attempt_commit`      | `message: str`                                  | `{"status": "committed"\|"rejected", "next_steps": [...]}`                       | Requires prior `APPROVED` review. Follow `next_steps`. |
 
 ---
 
@@ -75,11 +74,14 @@ stateDiagram-v2
     TASK_CLAIMED --> TDD_LOOP: write test
     TDD_LOOP --> TDD_LOOP: run_tests (fail)
     TDD_LOOP --> STAGING: run_tests (pass) + run_lint (pass)
-    STAGING --> REVIEW: git_stage → request_code_review
+    STAGING --> REVIEW: request_code_review
     REVIEW --> TDD_LOOP: request_code_review (REJECTED)
     REVIEW --> COMMITTED: attempt_commit (APPROVED, returns next_steps)
-    COMMITTED --> MERGED: merge_to_main
-    MERGED --> TASK_COMPLETE: complete_task
+    COMMITTED --> MERGED: merge_task
+    MERGED --> CONFLICT: rebase conflict
+    CONFLICT --> MERGED: resolve + retry
+    MERGED --> CLEANED: cleanup_task (after cd to project root)
+    CLEANED --> TASK_COMPLETE: complete_task
     TASK_COMPLETE --> TASK_CLAIMED: next_ready + start_task
     TDD_LOOP --> ESCALATED: circuit breaker (max attempts)
     REVIEW --> ESCALATED: circuit breaker (max attempts)
@@ -96,10 +98,8 @@ stateDiagram-v2
 4. Never modify files outside your active worktree.
 5. Never work on a task that isn't `in_progress` in Beads.
 6. Never call `import_gsd_plan` before `configure_stack`.
-7. Never `cd` into a worktree directory. Use absolute paths or the `cwd`
-   parameter instead. Worktrees are removed by `merge_to_main` and
-   `abandon_task` — if your shell CWD is inside a deleted worktree, all
-   subsequent shell commands will fail.
+7. After `merge_task` succeeds, always `cd` to project root before calling
+   `cleanup_task`. The merge_task response includes this in `next_steps`.
 
 ---
 
@@ -157,7 +157,9 @@ stateDiagram-v2
   escalates automatically.
 - **Review rejections:** Fix issues listed in JSON response. After
   `max_review_attempts`, the tool escalates automatically.
-- **Merge conflicts:** Call `abandon_task`, then `start_task` again (fresh
-  worktree from latest main).
+- **Merge conflicts:** `merge_task` returns `status: "conflict"` with
+  `conflicted_files` and `next_steps` for resolution. Follow the steps to
+  resolve, then retry `merge_task`. If resolution fails repeatedly, call
+  `abandon_task` to reset.
 - **Context reset:** Call `recover_session` on startup. It checks session
   staleness, verifies worktree and task status, and resumes or cleans up.

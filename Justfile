@@ -30,20 +30,20 @@ format-app:
 # --- Git Worktrees ---
 start-task id:
     @echo "Creating worktree for {{id}}..."
-    git fetch origin main
-    git worktree add -b feat/{{id}} ./worktrees/{{id}} origin/main
+    git worktree add -b feat/{{id}} ./worktrees/{{id}} main
     @echo "Worktree ready at ./worktrees/{{id}}"
 
-finish-task id:
-    @echo "Finishing task {{id}}..."
-    just check
-    cd ./worktrees/{{id}} && git push origin feat/{{id}}
-    @echo "Pushed feat/{{id}}"
+merge-task id:
+    @echo "Merging task {{id}}..."
+    git rebase main feat/{{id}}
+    git merge --no-ff feat/{{id}} -m "Merge feat/{{id}} into main"
+    @echo "Merged feat/{{id}} into main"
 
 cleanup-task id:
-    @echo "Removing worktree for {{id}}..."
+    @echo "Cleaning up task {{id}}..."
     git worktree remove ./worktrees/{{id}} --force
     git branch -D feat/{{id}} 2>/dev/null || true
+    @echo "Cleaned up feat/{{id}}"
 
 list-worktrees:
     git worktree list

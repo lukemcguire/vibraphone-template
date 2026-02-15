@@ -29,8 +29,8 @@ class QualityGateConfig:
     require_lint: bool = True
     require_review: bool = True
     review_severity_threshold: str = "error"
-    max_test_attempts: int = 5
-    max_review_attempts: int = 3
+    max_test_attempts: int = 8
+    max_review_attempts: int = 5
 
 
 @dataclass

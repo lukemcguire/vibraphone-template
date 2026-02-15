@@ -9,12 +9,52 @@ import asyncio
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from openai import AsyncOpenAI
 
 from config import config, project_root
 from utils import br_client, session
+
+# ---------------------------------------------------------------------------
+# Dangerous-file detection for staging
+# ---------------------------------------------------------------------------
+
+_DANGEROUS_FILENAMES = {
+    ".env",
+    ".env.local",
+    ".env.production",
+    ".env.staging",
+    "credentials.json",
+    "service-account.json",
+    "secrets.json",
+    "id_rsa",
+    "id_ed25519",
+}
+
+_DANGEROUS_EXTENSIONS = {
+    ".pem",
+    ".key",
+    ".p12",
+    ".pfx",
+    ".jks",
+    ".keystore",
+}
+
+_DANGEROUS_PATH_PARTS = {
+    ".ssh",
+    ".gnupg",
+}
+
+
+def _is_dangerous(path: str) -> bool:
+    """Check if a file path matches known sensitive file patterns."""
+    p = PurePosixPath(path)
+    if p.name in _DANGEROUS_FILENAMES:
+        return True
+    if p.suffix in _DANGEROUS_EXTENSIONS:
+        return True
+    return bool(_DANGEROUS_PATH_PARTS & set(p.parts))
 
 
 def _working_dir() -> str | None:
@@ -88,6 +128,75 @@ def _read_file_contents(paths: list[str]) -> str:
     return "\n\n".join(sections)
 
 
+async def _stage_files(paths: list[str] | None, *, stage_all: bool) -> dict:
+    """Stage files with safety checks for sensitive files.
+
+    Args:
+        paths: Specific file paths to stage. Mutually exclusive with stage_all.
+        stage_all: Stage all changed files (equivalent to git add -A, minus
+             dangerous files). Mutually exclusive with paths.
+
+    Returns:
+        dict with status, staged list, and warnings list.
+    """
+    if bool(paths) == stage_all:
+        return {
+            "status": "error",
+            "reason": "Provide either 'paths' or 'stage_all=True', not both (or neither).",
+        }
+
+    cwd = _working_dir()
+    warnings: list[str] = []
+
+    if stage_all:
+        # Discover changed files via git status
+        proc = await asyncio.create_subprocess_exec(
+            "git",
+            "status",
+            "--porcelain",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=cwd,
+        )
+        stdout, _ = await proc.communicate()
+        lines = stdout.decode().strip().splitlines()
+        # Parse porcelain output: first 3 chars are status, rest is path
+        candidates = [line[3:].strip().strip('"') for line in lines if line.strip()]
+    else:
+        candidates = list(paths)  # type: ignore[arg-type]
+
+    safe: list[str] = []
+    for p in candidates:
+        if _is_dangerous(p):
+            warnings.append(f"Blocked sensitive file: {p}")
+        else:
+            safe.append(p)
+
+    if not safe:
+        return {"status": "nothing_to_stage", "staged": [], "warnings": warnings}
+
+    proc = await asyncio.create_subprocess_exec(
+        "git",
+        "add",
+        "--",
+        *safe,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        cwd=cwd,
+    )
+    _, stderr = await proc.communicate()
+
+    if proc.returncode != 0:
+        return {
+            "status": "error",
+            "reason": stderr.decode().strip(),
+            "staged": [],
+            "warnings": warnings,
+        }
+
+    return {"status": "staged", "staged": safe, "warnings": warnings}
+
+
 async def _perform_review(
     diff: str,
     files_content: str,
@@ -154,11 +263,54 @@ async def _perform_review(
     return {"status": status, "issues": issues, "raw_response": raw_text}
 
 
-async def request_code_review() -> dict:
-    """Review staged git changes against the project constitution.
+def _load_review_files() -> tuple[str | None, str | None]:
+    """Load constitution and prompt files.
 
-    Uses an LLM to check the staged diff against CONSTITUTION.md rules.
-    Returns structured JSON with status (APPROVED/REJECTED/ESCALATED) and issues.
+    Returns tuple of (constitution, prompt), either of which may be None if not found.
+    """
+    root = project_root()
+    constitution_path = root / config.review.constitution_file
+    prompt_path = root / config.review.prompt_file
+
+    constitution = constitution_path.read_text() if constitution_path.exists() else None
+    prompt = prompt_path.read_text() if prompt_path.exists() else None
+
+    return constitution, prompt
+
+
+def _merge_issues(prev_issues: list[dict], new_issues: list[dict]) -> list[dict]:
+    """Merge issues from previous attempts, deduplicating by rule+file+line."""
+    seen: set[tuple] = set()
+    merged: list[dict] = []
+    for issue in [*prev_issues, *new_issues]:
+        key = (
+            issue.get("rule", ""),
+            issue.get("file", ""),
+            issue.get("line", ""),
+        )
+        if key not in seen:
+            seen.add(key)
+            merged.append(issue)
+    return merged
+
+
+async def request_code_review(
+    paths: list[str] | None = None,
+    *,
+    stage_all: bool = False,
+) -> dict:
+    """Stage files and review them against the project constitution.
+
+    First stages the specified files (with safety checks for sensitive files),
+    then uses an LLM to check the staged diff against CONSTITUTION.md rules.
+
+    Args:
+        paths: Specific file paths to stage and review. Mutually exclusive with stage_all.
+        stage_all: Stage and review all changed files. Mutually exclusive with paths.
+
+    Returns:
+        Structured JSON with status (APPROVED/REJECTED/ESCALATED), issues,
+        staged files, and any warnings about blocked sensitive files.
     """
     state = session.load_session() or session.SessionState()
     task_id = state.active_task or "unknown"
@@ -191,6 +343,23 @@ async def request_code_review() -> dict:
         session.audit_log("request_code_review", {}, "escalated", result)
         return result
 
+    # Stage files first
+    stage_result = await _stage_files(paths, stage_all=stage_all)
+    if stage_result["status"] != "staged":
+        result = {
+            "status": "REJECTED",
+            "issues": [],
+            "attempt": attempt,
+            "reason": stage_result.get("reason", "No files to stage"),
+            "staged": stage_result.get("staged", []),
+            "warnings": stage_result.get("warnings", []),
+        }
+        session.audit_log("request_code_review", {}, "rejected", result)
+        return result
+
+    staged_files = stage_result["staged"]
+    warnings = stage_result.get("warnings", [])
+
     # Get staged diff
     diff = await _git_diff_staged()
     if not diff.strip():
@@ -199,6 +368,8 @@ async def request_code_review() -> dict:
             "issues": [],
             "attempt": attempt,
             "reason": "No staged changes to review",
+            "staged": staged_files,
+            "warnings": warnings,
         }
         session.audit_log("request_code_review", {}, "rejected", result)
         return result
@@ -207,33 +378,31 @@ async def request_code_review() -> dict:
     changed_files = await _get_changed_files()
     files_content = _read_file_contents(changed_files)
 
-    # Load constitution and reviewer prompt (always from project root, not worktree)
-    root = project_root()
-    constitution_path = root / config.review.constitution_file
-    prompt_path = root / config.review.prompt_file
-
-    if not constitution_path.exists():
+    # Load constitution and reviewer prompt
+    constitution, prompt = _load_review_files()
+    if constitution is None:
         result = {
             "status": "ESCALATED",
             "issues": [],
             "attempt": attempt,
             "reason": f"Constitution file not found: {config.review.constitution_file}",
+            "staged": staged_files,
+            "warnings": warnings,
         }
         session.audit_log("request_code_review", {}, "escalated", result)
         return result
 
-    if not prompt_path.exists():
+    if prompt is None:
         result = {
             "status": "ESCALATED",
             "issues": [],
             "attempt": attempt,
             "reason": f"Reviewer prompt not found: {config.review.prompt_file}",
+            "staged": staged_files,
+            "warnings": warnings,
         }
         session.audit_log("request_code_review", {}, "escalated", result)
         return result
-
-    constitution = constitution_path.read_text()
-    prompt = prompt_path.read_text()
 
     # Perform the review
     review_result = await _perform_review(
@@ -252,19 +421,7 @@ async def request_code_review() -> dict:
     if attempt >= 2:
         prev_state = session.load_session() or session.SessionState()
         prev_issues = prev_state.last_review_issues or []
-
-        seen: set[tuple] = set()
-        merged: list[dict] = []
-        for issue in [*prev_issues, *issues]:
-            key = (
-                issue.get("rule", ""),
-                issue.get("file", ""),
-                issue.get("line", ""),
-            )
-            if key not in seen:
-                seen.add(key)
-                merged.append(issue)
-        issues = merged
+        issues = _merge_issues(prev_issues, issues)
 
     # Update session state
     state = session.load_session() or session.SessionState()
@@ -273,7 +430,13 @@ async def request_code_review() -> dict:
     state.last_review_issues = issues
     session.save_session(state)
 
-    result = {"status": status, "issues": issues, "attempt": attempt}
+    result = {
+        "status": status,
+        "issues": issues,
+        "attempt": attempt,
+        "staged": staged_files,
+        "warnings": warnings,
+    }
     if "parse_error" in review_result:
         result["parse_error"] = review_result["parse_error"]
 
