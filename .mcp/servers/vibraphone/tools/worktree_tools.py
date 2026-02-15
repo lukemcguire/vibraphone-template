@@ -114,20 +114,36 @@ async def merge_to_main(task_id: str) -> dict:
     await _git("worktree", "remove", worktree_path, "--force")
 
     # 5. Delete feature branch
-    await _git("branch", "-d", branch)
+    # git branch -d fails when the branch isn't pushed to the remote tracking
+    # branch, even if it's merged locally. Since merge_to_main is local-only,
+    # verify the branch is an ancestor of HEAD ourselves, then delete safely.
+    rc_check, _ = await _git("merge-base", "--is-ancestor", branch, "HEAD")
+    if rc_check == 0:
+        rc, branch_output = await _git("branch", "-D", branch)
+    else:
+        rc, branch_output = 1, f"Branch '{branch}' is not an ancestor of HEAD after merge"
 
     # 6. Clear session
     session.clear_task()
+
+    warnings = [
+        f"Worktree at worktrees/{task_id} has been removed. "
+        "If your shell CWD was inside that worktree, it is now invalid. "
+        f"Run: cd {root}"
+    ]
+    if rc != 0:
+        warnings.append(
+            f"Branch '{branch}' was NOT deleted: {branch_output}. "
+            "This may indicate the merge did not fully integrate the branch. "
+            "Investigate before manually removing."
+        )
 
     result = {
         "status": "merged",
         "branch": branch,
         "merged_into": base,
-        "warning": (
-            f"Worktree at worktrees/{task_id} has been removed. "
-            "If your shell CWD was inside that worktree, it is now invalid. "
-            f"Run: cd {root}"
-        ),
+        "branch_deleted": rc == 0,
+        "warning": " | ".join(warnings),
     }
     session.audit_log("merge_to_main", {"task_id": task_id}, "ok", result)
     return result
