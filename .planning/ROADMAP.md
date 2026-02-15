@@ -48,11 +48,11 @@ Plans:
   3. User can gracefully stop crawl with Ctrl+C
   4. Tool exits with code 0 when no broken links found
   5. Tool exits with non-zero code when broken links found
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 02-01: TBD
-- [ ] 02-02: TBD
+- [ ] 02-01-PLAN.md — Refactor crawler to emit events via channel (remove stdout writes)
+- [ ] 02-02-PLAN.md — Bubble Tea TUI model, Lip Gloss styles, main.go integration
 
 ### Phase 3: Politeness & Reliability
 **Goal**: Web-crawler etiquette and resilient error handling for production use
@@ -110,7 +110,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Core Crawler Foundation | 0/3 | Planned | - |
-| 2. Bubble Tea TUI | 0/2 | Not started | - |
+| 2. Bubble Tea TUI | 0/2 | Planned | - |
 | 3. Politeness & Reliability | 0/3 | Not started | - |
 | 4. Configuration & Output | 0/2 | Not started | - |
 | 5. Production Polish | 0/2 | Not started | - |
