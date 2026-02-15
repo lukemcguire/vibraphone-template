@@ -9,12 +9,15 @@ Beads issues with the correct dependency graph for execution.
 from __future__ import annotations
 
 import re
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
+
+if TYPE_CHECKING:
+    from pathlib import Path
 from defusedxml.ElementTree import fromstring as parse_xml
 
-from config import project_root
+from config import config, project_root
 from utils import br_client, session
 
 # ---------------------------------------------------------------------------
@@ -156,44 +159,28 @@ async def _setup_plan_dependencies(
 _PLAN_FILE_RE = re.compile(r"^(\d+-\d+)-PLAN\.md$")
 
 
-async def import_gsd_plan(phase_number: int) -> dict:
-    """Import all GSD PLAN.md files for a phase into Beads tasks.
-
-    Reads .planning/phases/{phase_number}/ for files matching {N}-{M}-PLAN.md,
-    parses frontmatter and XML task blocks, creates Beads issues, and wires up
-    dependency edges.
-
-    Args:
-        phase_number: The GSD phase number to import (e.g. 1).
-
-    Returns:
-        dict with tasks_created, dependencies, and diagram_update_needed.
-    """
-    # GSD uses zero-padded directory names like "01-core-crawler-foundation"
+def _resolve_phase_dir(phase_number: int) -> Path | None:
+    """Locate the phase directory for a given phase number."""
     root = project_root()
     padded = str(phase_number).zfill(2)
     phases_dir = root / ".planning" / "phases"
     candidates = sorted(phases_dir.glob(f"{padded}-*"))
     if not candidates:
-        # Fallback to exact numeric match
         candidates = [phases_dir / str(phase_number)]
     phase_dir = candidates[0]
-    if not phase_dir.is_dir():
-        return {"error": f"Phase directory not found: {phase_dir}"}
+    return phase_dir if phase_dir.is_dir() else None
 
-    # Discover plan files, sorted for deterministic ordering
-    plan_files: list[tuple[str, Path]] = []
-    for path in sorted(phase_dir.iterdir()):
-        match = _PLAN_FILE_RE.match(path.name)
-        if match:
-            plan_files.append((match.group(1), path))
 
-    if not plan_files:
-        return {"error": f"No PLAN.md files found in {phase_dir}"}
+async def _parse_and_create_tasks(
+    plan_files: list[tuple[str, Path]],
+) -> tuple[dict[str, list[str]], dict[str, list[str]], list[dict], bool]:
+    """Parse plan files and create Beads tasks.
 
-    # --- Pass 1: Parse all plans, create Beads tasks ---
-    plan_tasks: dict[str, list[str]] = {}  # plan_id -> [beads_issue_id, ...]
-    plan_deps: dict[str, list[str]] = {}  # plan_id -> [dep_plan_id, ...]
+    Returns:
+        Tuple of (plan_tasks, plan_deps, tasks_created, has_new_components).
+    """
+    plan_tasks: dict[str, list[str]] = {}
+    plan_deps: dict[str, list[str]] = {}
     tasks_created: list[dict] = []
     has_new_components = False
 
@@ -205,17 +192,14 @@ async def import_gsd_plan(phase_number: int) -> dict:
         if not parsed_tasks:
             continue
 
-        # Record inter-plan dependencies from frontmatter
         raw_deps = frontmatter.get("depends_on", [])
         if isinstance(raw_deps, str):
             raw_deps = [raw_deps]
         plan_deps[plan_id] = [str(d) for d in raw_deps]
 
-        # Check for new component creation
         if _detect_new_components(content):
             has_new_components = True
 
-        # Create Beads issues for each task
         issue_ids: list[str] = []
         for idx, task_data in enumerate(parsed_tasks):
             issue_id = await _create_beads_task(plan_id, idx, task_data)
@@ -224,16 +208,86 @@ async def import_gsd_plan(phase_number: int) -> dict:
 
         plan_tasks[plan_id] = issue_ids
 
-    # --- Pass 2: Wire up all dependencies ---
+    return plan_tasks, plan_deps, tasks_created, has_new_components
+
+
+async def _existing_plan_ids() -> set[str]:
+    """Return the set of plan IDs that already have Beads tasks.
+
+    Scans all open tasks for labels matching ``plan:<id>`` and returns the
+    set of ``<id>`` values (e.g. ``{"01-01", "01-02"}``).
+    """
+    result = await br_client.br_list()
+    items = result.get("items", [])
+    ids: set[str] = set()
+    for item in items:
+        for label in item.get("labels", []):
+            if isinstance(label, str) and label.startswith("plan:"):
+                ids.add(label.removeprefix("plan:"))
+    return ids
+
+
+async def import_gsd_plan(phase_number: int) -> dict:
+    """Import all GSD PLAN.md files for a phase into Beads tasks.
+
+    Reads .planning/phases/{phase_number}/ for files matching {N}-{M}-PLAN.md,
+    parses frontmatter and XML task blocks, creates Beads issues, and wires up
+    dependency edges.
+
+    Idempotent: plans whose tasks already exist (by ``plan:<id>`` label) are
+    skipped.  If all plans are already imported, returns a notice instead of
+    duplicating work.
+
+    Args:
+        phase_number: The GSD phase number to import (e.g. 1).
+
+    Returns:
+        dict with tasks_created, dependencies, and diagram_update_needed.
+    """
+    if not config.components:
+        return {
+            "error": "No components configured in vibraphone.yaml. "
+            "Run configure_stack first.",
+            "action_required": "configure_stack",
+        }
+
+    phase_dir = _resolve_phase_dir(phase_number)
+    if phase_dir is None:
+        return {"error": f"Phase directory not found for phase {phase_number}"}
+
+    # Discover plan files, sorted for deterministic ordering
+    plan_files: list[tuple[str, Path]] = []
+    for path in sorted(phase_dir.iterdir()):
+        match = _PLAN_FILE_RE.match(path.name)
+        if match:
+            plan_files.append((match.group(1), path))
+
+    if not plan_files:
+        return {"error": f"No PLAN.md files found in {phase_dir}"}
+
+    # Idempotency: skip plans that already have tasks in Beads
+    existing = await _existing_plan_ids()
+    skipped = [pid for pid, _ in plan_files if pid in existing]
+    plan_files = [(pid, p) for pid, p in plan_files if pid not in existing]
+
+    if not plan_files:
+        return {
+            "already_imported": True,
+            "skipped_plans": skipped,
+            "message": f"All plans for phase {phase_number} already imported.",
+        }
+
+    plan_tasks, plan_deps, tasks_created, has_new_components = await _parse_and_create_tasks(plan_files)
+
     dependencies = await _setup_plan_dependencies(plan_tasks, plan_deps, plan_tasks)
 
     result = {
         "tasks_created": tasks_created,
         "dependencies": dependencies,
         "diagram_update_needed": has_new_components,
+        "skipped_plans": skipped,
     }
 
-    # Flush to JSONL so bv sees the imported tasks
     await br_client.br_sync()
 
     session.audit_log(

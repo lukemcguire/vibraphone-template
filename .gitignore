@@ -3,6 +3,7 @@
 
 # Beads database (JSONL is committed, SQLite is not)
 .beads/beads.db
+.beads/.br_history/
 
 # Git worktrees
 worktrees/
