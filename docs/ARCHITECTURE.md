@@ -57,15 +57,19 @@ Internal structure per container.
 
 ```mermaid
 C4Component
-    title Component Diagram
-    %% Replace with actual components after project planning
-    Container_Boundary(app, "Application") {
-        Component(api, "API Layer", "Tech TBD", "Handles HTTP requests")
-        Component(svc, "Service Layer", "Tech TBD", "Business logic")
-        Component(repo, "Repository Layer", "Tech TBD", "Data access")
+    title Component Diagram — ZombieCrawl
+    Container_Boundary(app, "ZombieCrawl CLI") {
+        Component(main, "main", "Go", "CLI entry point")
+        Component(crawler, "crawler", "Go", "Concurrent crawl engine with worker pool")
+        Component(extract, "crawler/extract", "Go", "HTML tokenizer-based link extraction")
+        Component(urlutil, "urlutil", "Go", "URL filtering, normalization, domain checks")
+        Component(result, "result", "Go", "Link result types")
     }
-    Rel(api, svc, "Calls")
-    Rel(svc, repo, "Calls")
+    Rel(main, crawler, "Starts crawl")
+    Rel(crawler, extract, "Extracts links from pages")
+    Rel(crawler, urlutil, "Filters and classifies URLs")
+    Rel(extract, urlutil, "Normalizes discovered URLs")
+    Rel(crawler, result, "Produces link results")
 ```
 
 ---
