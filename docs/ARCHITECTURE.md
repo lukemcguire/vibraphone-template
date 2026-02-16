@@ -42,7 +42,7 @@ C4Container
     title Container Diagram — ZombieCrawl
     Person(user, "User", "Runs CLI from terminal")
     System_Boundary(sb, "ZombieCrawl") {
-        Container(cli, "zombiecrawl", "Go binary", "CLI entry point, flag parsing, signal handling")
+        Container(cli, "zombiecrawl", "Go binary", "CLI entry point, Bubble Tea TUI with live progress")
     }
     System_Ext(target, "Target Website", "Serves HTML pages over HTTP/HTTPS")
     Rel(user, cli, "Provides URL and flags")
@@ -60,15 +60,18 @@ Internal structure per container.
 C4Component
     title Component Diagram — ZombieCrawl
     Container_Boundary(app, "ZombieCrawl CLI") {
-        Component(main, "main", "Go", "CLI entry point")
+        Component(main, "main", "Go", "CLI entry point, wires TUI to crawler")
+        Component(tuipkg, "tui", "Go", "Bubble Tea model with live progress and Lip Gloss summary")
         Component(crawler, "crawler", "Go", "Concurrent crawl engine with worker pool")
         Component(events, "crawler/events", "Go", "Progress event types for TUI integration")
         Component(extract, "crawler/extract", "Go", "HTML tokenizer-based link extraction")
         Component(urlutil, "urlutil", "Go", "URL filtering, normalization, domain checks")
         Component(result, "result", "Go", "Link result types and output formatting")
     }
-    Rel(main, crawler, "Starts crawl")
-    Rel(main, result, "Prints results to stdout")
+    Rel(main, tuipkg, "Creates Model, runs tea.Program")
+    Rel(tuipkg, crawler, "Starts crawl via tea.Cmd")
+    Rel(tuipkg, events, "Reads CrawlEvent from progress channel")
+    Rel(tuipkg, result, "Renders styled summary from Result")
     Rel(crawler, events, "Emits progress events")
     Rel(crawler, extract, "Extracts links from pages")
     Rel(crawler, urlutil, "Filters and classifies URLs")
@@ -140,14 +143,17 @@ classDiagram
 sequenceDiagram
     participant U as User
     participant M as main
+    participant TUI as tui.Model
     participant C as Crawler
     participant W as Worker Pool
     participant E as ExtractLinks
     participant T as Target Website
 
     U->>M: zombiecrawl [flags] <url>
-    M->>C: New(cfg, progressCh)
-    M->>C: Run(ctx)
+    M->>TUI: NewModel(ctx, cancel, crawler, progressCh)
+    M->>TUI: tea.NewProgram(model).Run()
+    TUI->>TUI: Init() → Batch(spinner.Tick, startCrawl, waitForProgress)
+    TUI->>C: startCrawl → crawler.Run(ctx)
     C->>W: Launch N workers
     C->>W: Seed start URL as CrawlJob
 
@@ -162,9 +168,12 @@ sequenceDiagram
         else External link
             W-->>C: CrawlResult{Result}
         end
+        C->>TUI: CrawlEvent via progressCh
+        TUI->>TUI: Update(CrawlProgressMsg) → re-render spinner + counters
     end
 
-    C-->>M: *Result{BrokenLinks, Stats}
-    M->>M: PrintResults(stdout, result)
-    M-->>U: Broken link report + exit code
+    C-->>TUI: CrawlDoneMsg{Result}
+    TUI->>TUI: View() → RenderSummary (Lip Gloss styled table)
+    TUI-->>M: finalModel via p.Run()
+    M-->>U: Styled report + exit code
 ```
