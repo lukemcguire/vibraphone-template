@@ -225,6 +225,7 @@ async def _perform_review(
     prompt: str,
     model: str,
     api_key: str,
+    previous_issues: list[dict] | None = None,
 ) -> dict:
     """Core review logic shared by MCP tool and standalone CLI.
 
@@ -236,6 +237,17 @@ async def _perform_review(
     )
 
     user_message = f"# RULES\n{constitution}\n\n# DIFF\n{diff}\n\n# FILES\n{files_content}"
+
+    if previous_issues:
+        prev_json = json.dumps(previous_issues, indent=2)
+        user_message += (
+            f"\n\n# PREVIOUS REVIEW ISSUES\n"
+            f"The following issues were raised in a prior review of this code. "
+            f"The author has attempted to fix them. For each previous issue, "
+            f"check whether it has been addressed in the current DIFF and FILES. "
+            f"Only re-report an issue if it still exists in the current code. "
+            f"Do NOT echo resolved issues.\n\n{prev_json}"
+        )
 
     response = await client.chat.completions.create(
         model=model,
@@ -297,22 +309,6 @@ def _load_review_files() -> tuple[str | None, str | None]:
     prompt = prompt_path.read_text() if prompt_path.exists() else None
 
     return constitution, prompt
-
-
-def _merge_issues(prev_issues: list[dict], new_issues: list[dict]) -> list[dict]:
-    """Merge issues from previous attempts, deduplicating by rule+file+line."""
-    seen: set[tuple] = set()
-    merged: list[dict] = []
-    for issue in [*prev_issues, *new_issues]:
-        key = (
-            issue.get("rule", ""),
-            issue.get("file", ""),
-            issue.get("line", ""),
-        )
-        if key not in seen:
-            seen.add(key)
-            merged.append(issue)
-    return merged
 
 
 async def request_code_review(
@@ -422,8 +418,41 @@ async def request_code_review(
         session.audit_log("request_code_review", {}, "error", result)
         return result
 
+    # Short-circuit if the diff hasn't changed since the last review.
+    # The agent resubmitted without modifying code — return the previous
+    # result without burning an attempt or an LLM call.
+    current_diff_hash = await _git_diff_staged_hash()
+    if (
+        state.last_review_diff_hash
+        and state.last_review_diff_hash == current_diff_hash
+        and state.last_review_issues is not None
+    ):
+        result = {
+            "status": state.last_review_status or "REJECTED",
+            "issues": state.last_review_issues,
+            "attempt": current_attempts,
+            "staged": staged_files,
+            "warnings": warnings,
+            "unchanged": True,
+            "reason": "Diff unchanged since last review — fix the issues before resubmitting.",
+        }
+        if state.last_review_status == "APPROVED":
+            result["next_steps"] = [
+                "1. attempt_commit(message='your commit message') to commit",
+            ]
+        else:
+            result["next_steps"] = [
+                "1. Fix the issues listed above",
+                "2. request_code_review(stage_all=True) to re-submit",
+            ]
+        session.audit_log("request_code_review", {}, "unchanged", result)
+        return result
+
     # All preconditions met — now increment the attempt counter
     attempt = session.increment_review_attempts(task_id)
+
+    # Pass previous issues to the reviewer so it can verify they were addressed
+    previous_issues = state.last_review_issues if attempt >= 2 else None
 
     # Perform the review
     review_result = await _perform_review(
@@ -433,16 +462,11 @@ async def request_code_review(
         prompt=prompt,
         model=config.review.model,
         api_key=api_key,
+        previous_issues=previous_issues,
     )
 
     status = review_result["status"]
     issues = review_result["issues"]
-
-    # Aggregate issues from previous attempts (dedup by rule+file+line)
-    if attempt >= 2:
-        prev_state = session.load_session() or session.SessionState()
-        prev_issues = prev_state.last_review_issues or []
-        issues = _merge_issues(prev_issues, issues)
 
     # Update session state
     state = session.load_session() or session.SessionState()
