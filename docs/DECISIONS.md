@@ -35,6 +35,23 @@ Each ADR follows this structure:
   operations. Direct shell commands for these operations are prohibited. This
   adds overhead but guarantees quality gate enforcement.
 
+## ADR-003: Use Charm Ecosystem for Terminal UI
+
+- **Date:** 2026-02-15
+- **Status:** Accepted
+- **Context:** Phase 2 requires a live terminal UI with spinner, progress
+  counters, and styled summary tables. The main options are: (1) raw ANSI escape
+  codes, (2) the Charm ecosystem (Bubble Tea + Lip Gloss + Bubbles), or
+  (3) other TUI frameworks like tview or termui.
+- **Decision:** Use charmbracelet/bubbletea for the Elm-architecture TUI loop,
+  charmbracelet/lipgloss for styling and table rendering, and
+  charmbracelet/bubbles for the spinner component.
+- **Consequences:** Adds three dependencies from the Charm ecosystem. Bubble Tea's
+  Elm architecture (Init/Update/View) provides a clean separation of concerns and
+  testable state transitions. Lip Gloss gives styled output without manual ANSI
+  codes. The trade-off is a larger dependency tree compared to raw escape codes,
+  but the Charm libraries are widely adopted, well-maintained, and composable.
+
 ## ADR-002: Use golang.org/x/net for HTML Parsing
 
 - **Date:** 2026-02-15
