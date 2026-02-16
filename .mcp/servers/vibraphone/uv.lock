@@ -1961,6 +1961,7 @@ dependencies = [
     { name = "defusedxml" },
     { name = "fastmcp" },
     { name = "openai" },
+    { name = "python-dotenv" },
     { name = "pyyaml" },
 ]
 
@@ -1979,6 +1980,7 @@ requires-dist = [
     { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "fastmcp", specifier = ">=0.1.0" },
     { name = "openai", specifier = ">=1.0.0" },
+    { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "pyyaml", specifier = ">=6.0" },
 ]
 

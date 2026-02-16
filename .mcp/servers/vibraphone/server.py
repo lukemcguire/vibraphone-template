@@ -3,6 +3,10 @@
 Registers all Vibraphone tools and starts the MCP server on stdio transport.
 """
 
+from dotenv import load_dotenv
+
+load_dotenv("../../../.env")  # Load from project root
+
 from fastmcp import FastMCP
 from fastmcp.tools import Tool
 
