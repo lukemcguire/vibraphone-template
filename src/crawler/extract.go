@@ -5,8 +5,8 @@ import (
 	"io"
 	"net/url"
 
-	"golang.org/x/net/html"
 	"github.com/lukemcguire/zombiecrawl/urlutil"
+	"golang.org/x/net/html"
 )
 
 // ExtractLinks parses HTML from the given reader and extracts all anchor tag hrefs.
@@ -19,8 +19,8 @@ func ExtractLinks(body io.Reader, baseURL *url.URL) ([]string, error) {
 	var errs []error
 
 	for {
-		tt := tokenizer.Next()
-		switch tt {
+		tokenType := tokenizer.Next()
+		switch tokenType {
 		case html.ErrorToken:
 			// End of document or error
 			if len(errs) > 0 {

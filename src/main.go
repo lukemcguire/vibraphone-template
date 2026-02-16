@@ -6,12 +6,11 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/lukemcguire/zombiecrawl/crawler"
-	"github.com/lukemcguire/zombiecrawl/result"
+	"github.com/lukemcguire/zombiecrawl/tui"
 )
 
 func main() {
@@ -27,14 +26,14 @@ func main() {
 	}
 
 	rawURL := flag.Arg(0)
-	u, err := url.Parse(rawURL)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
 		fmt.Fprintf(os.Stderr, "Invalid URL: %s\nURL must start with http:// or https://\n", rawURL)
 		os.Exit(1)
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	cfg := crawler.Config{
 		StartURL:       rawURL,
@@ -42,21 +41,20 @@ func main() {
 		RequestTimeout: 10 * time.Second,
 	}
 
-	c := crawler.New(cfg, nil)
+	progressCh := make(chan crawler.CrawlEvent, 100)
+	crawlerInstance := crawler.New(cfg, progressCh)
 
-	results, err := c.Run(ctx)
-	if err != nil && ctx.Err() == nil {
+	tuiModel := tui.NewModel(ctx, cancel, crawlerInstance, progressCh)
+	program := tea.NewProgram(tuiModel)
+
+	finalModel, err := program.Run()
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	if ctx.Err() != nil {
-		fmt.Fprintln(os.Stderr, "\nCrawl interrupted. Showing partial results...")
-	}
-
-	result.PrintResults(os.Stdout, results)
-
-	if len(results.BrokenLinks) > 0 {
+	finalTUIModel := finalModel.(tui.Model)
+	if finalTUIModel.HasBrokenLinks() {
 		os.Exit(1)
 	}
 }
