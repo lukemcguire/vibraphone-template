@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import re
 from pathlib import Path, PurePosixPath
@@ -16,6 +17,8 @@ from openai import AsyncOpenAI
 
 from config import config, project_root
 from utils import br_client, session
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Dangerous-file detection for staging
@@ -168,6 +171,7 @@ async def _stage_files(paths: list[str] | None, *, stage_all: bool) -> dict:
         }
 
     cwd = _working_dir()
+    logger.debug("_stage_files: cwd=%s", cwd or "(inherit)")
     warnings: list[str] = []
 
     if stage_all:
@@ -181,10 +185,14 @@ async def _stage_files(paths: list[str] | None, *, stage_all: bool) -> dict:
             cwd=cwd,
         )
         stdout, _ = await proc.communicate()
-        lines = stdout.decode().strip().splitlines()
+        raw_output = stdout.decode().rstrip()  # Only strip trailing whitespace, preserve leading XY
+        logger.debug("_stage_files: git status output=%r", raw_output)
+        lines = raw_output.splitlines()
         candidates = _parse_porcelain(lines)
     else:
         candidates = list(paths)  # type: ignore[arg-type]
+
+    logger.debug("_stage_files: candidates=%r", candidates)
 
     safe: list[str] = []
     for p in candidates:
@@ -311,6 +319,138 @@ def _load_review_files() -> tuple[str | None, str | None]:
     return constitution, prompt
 
 
+# ---------------------------------------------------------------------------
+# Result builders and validators (reduce C901 complexity)
+# ---------------------------------------------------------------------------
+
+
+def _error_result(
+    reason: str,
+    staged: list[str] | None = None,
+    warnings: list[str] | None = None,
+    attempt: int | None = None,
+) -> dict:
+    """Build a standardized error response."""
+    result: dict = {
+        "status": "error",
+        "issues": [],
+        "reason": reason,
+        "staged": staged or [],
+        "warnings": warnings or [],
+    }
+    if attempt is not None:
+        result["attempt"] = attempt
+    return result
+
+
+def _check_circuit_breaker(state: session.SessionState, task_id: str) -> dict | None:
+    """Check if circuit breaker has been tripped for review attempts.
+
+    Returns an escalation result if max attempts exceeded, else None.
+    """
+    max_attempts = config.quality_gate.max_review_attempts
+    current_attempts = (state.review_attempts or {}).get(task_id, 0)
+
+    if current_attempts >= max_attempts:
+        return {
+            "status": "ESCALATED",
+            "issues": [],
+            "attempt": current_attempts,
+            "reason": f"Max review attempts ({max_attempts}) exceeded. Task blocked.",
+            "next_steps": [
+                "1. Stop working on this task — it is now blocked",
+                "2. Call next_ready() to get a different task",
+            ],
+        }
+    return None
+
+
+def _validate_api_key() -> str | None:
+    """Return API key if available, or None if missing."""
+    return os.environ.get("REVIEWER_API_KEY")
+
+
+def _load_review_assets() -> tuple[str, str] | dict:
+    """Load constitution and reviewer prompt files.
+
+    Returns (constitution, prompt) on success, or error dict on failure.
+    """
+    constitution, prompt = _load_review_files()
+
+    if constitution is None:
+        return _error_result(
+            f"Constitution file not found: {config.review.constitution_file}"
+        )
+    if prompt is None:
+        return _error_result(f"Reviewer prompt not found: {config.review.prompt_file}")
+
+    return constitution, prompt
+
+
+def _build_unchanged_result(
+    state: session.SessionState,
+    current_attempts: int,
+    staged_files: list[str],
+    warnings: list[str],
+) -> dict:
+    """Build result for unchanged diff (short-circuit return)."""
+    result: dict = {
+        "status": state.last_review_status or "REJECTED",
+        "issues": state.last_review_issues or [],
+        "attempt": current_attempts,
+        "staged": staged_files,
+        "warnings": warnings,
+        "unchanged": True,
+        "reason": "Diff unchanged since last review — fix the issues before resubmitting.",
+    }
+
+    if state.last_review_status == "APPROVED":
+        result["next_steps"] = ["1. attempt_commit(message='your commit message') to commit"]
+    else:
+        result["next_steps"] = [
+            "1. Fix the issues listed above",
+            "2. request_code_review(stage_all=True) to re-submit",
+        ]
+
+    return result
+
+
+def _build_review_result(
+    status: str,
+    issues: list[dict],
+    attempt: int,
+    staged_files: list[str],
+    warnings: list[str],
+    parse_error: str | None = None,
+) -> dict:
+    """Build the final review result with next_steps."""
+    result: dict = {
+        "status": status,
+        "issues": issues,
+        "attempt": attempt,
+        "staged": staged_files,
+        "warnings": warnings,
+    }
+
+    if parse_error:
+        result["parse_error"] = parse_error
+
+    if status == "APPROVED":
+        result["next_steps"] = ["1. attempt_commit(message='your commit message') to commit"]
+    elif status == "REJECTED":
+        result["next_steps"] = [
+            "1. Fix the issues listed above",
+            "2. request_code_review(stage_all=True) to re-submit",
+        ]
+    elif status == "ESCALATED":
+        result["next_steps"] = [
+            "1. Stop working on this task — it is now escalated",
+            "2. Call next_ready() to get a different task",
+        ]
+
+    return result
+
+
 async def request_code_review(
     paths: list[str] | None = None,
     *,
@@ -331,130 +471,72 @@ async def request_code_review(
     """
     state = session.load_session() or session.SessionState()
     task_id = state.active_task or "unknown"
-    max_attempts = config.quality_gate.max_review_attempts
-
-    # Check circuit breaker (without incrementing yet)
     current_attempts = (state.review_attempts or {}).get(task_id, 0)
-    if current_attempts >= max_attempts:
-        await br_client.br_update(task_id, status="blocked")
-        result = {
-            "status": "ESCALATED",
-            "issues": [],
-            "attempt": current_attempts,
-            "reason": f"Max review attempts ({max_attempts}) exceeded. Task blocked.",
-            "next_steps": [
-                "1. Stop working on this task — it is now blocked",
-                "2. Call next_ready() to get a different task",
-            ],
-        }
-        session.audit_log("request_code_review", {}, "escalated", result)
-        return result
 
-    # Validate API key (don't burn an attempt for missing config)
-    api_key = os.environ.get("REVIEWER_API_KEY")
+    # 1. Check circuit breaker
+    if escalation := _check_circuit_breaker(state, task_id):
+        await br_client.br_update(task_id, status="blocked")
+        session.audit_log("request_code_review", {}, "escalated", escalation)
+        return escalation
+
+    # 2. Validate API key
+    api_key = _validate_api_key()
     if not api_key:
-        result = {
-            "status": "error",
-            "issues": [],
-            "reason": "REVIEWER_API_KEY environment variable not set",
-        }
+        result = _error_result("REVIEWER_API_KEY environment variable not set")
         session.audit_log("request_code_review", {}, "error", result)
         return result
 
-    # Stage files first (don't burn an attempt for staging failures)
+    # 3. Stage files
     stage_result = await _stage_files(paths, stage_all=stage_all)
     if stage_result["status"] != "staged":
-        result = {
-            "status": "error",
-            "issues": [],
-            "reason": stage_result.get("reason", "No files to stage"),
-            "staged": stage_result.get("staged", []),
-            "warnings": stage_result.get("warnings", []),
-        }
+        result = _error_result(
+            stage_result.get("reason", "No files to stage"),
+            staged=stage_result.get("staged", []),
+            warnings=stage_result.get("warnings", []),
+        )
         session.audit_log("request_code_review", {}, "error", result)
         return result
 
     staged_files = stage_result["staged"]
     warnings = stage_result.get("warnings", [])
 
-    # Get staged diff
+    # 4. Get staged diff
     diff = await _git_diff_staged()
     if not diff.strip():
-        result = {
-            "status": "error",
-            "issues": [],
-            "reason": "No staged changes to review",
-            "staged": staged_files,
-            "warnings": warnings,
-        }
+        result = _error_result(
+            "No staged changes to review",
+            staged=staged_files,
+            warnings=warnings,
+        )
         session.audit_log("request_code_review", {}, "error", result)
         return result
 
-    # Get changed file contents
-    changed_files = await _get_changed_files()
-    files_content = _read_file_contents(changed_files)
-
-    # Load constitution and reviewer prompt
-    constitution, prompt = _load_review_files()
-    if constitution is None:
-        result = {
-            "status": "error",
-            "issues": [],
-            "reason": f"Constitution file not found: {config.review.constitution_file}",
-            "staged": staged_files,
-            "warnings": warnings,
-        }
+    # 5. Load review assets (constitution + prompt)
+    assets = _load_review_assets()
+    if isinstance(assets, dict):
+        result = {**assets, "staged": staged_files, "warnings": warnings}
         session.audit_log("request_code_review", {}, "error", result)
         return result
+    constitution, prompt = assets
 
-    if prompt is None:
-        result = {
-            "status": "error",
-            "issues": [],
-            "reason": f"Reviewer prompt not found: {config.review.prompt_file}",
-            "staged": staged_files,
-            "warnings": warnings,
-        }
-        session.audit_log("request_code_review", {}, "error", result)
-        return result
-
-    # Short-circuit if the diff hasn't changed since the last review.
-    # The agent resubmitted without modifying code — return the previous
-    # result without burning an attempt or an LLM call.
+    # 6. Check for unchanged diff (short-circuit)
     current_diff_hash = await _git_diff_staged_hash()
     if (
         state.last_review_diff_hash
         and state.last_review_diff_hash == current_diff_hash
         and state.last_review_issues is not None
     ):
-        result = {
-            "status": state.last_review_status or "REJECTED",
-            "issues": state.last_review_issues,
-            "attempt": current_attempts,
-            "staged": staged_files,
-            "warnings": warnings,
-            "unchanged": True,
-            "reason": "Diff unchanged since last review — fix the issues before resubmitting.",
-        }
-        if state.last_review_status == "APPROVED":
-            result["next_steps"] = [
-                "1. attempt_commit(message='your commit message') to commit",
-            ]
-        else:
-            result["next_steps"] = [
-                "1. Fix the issues listed above",
-                "2. request_code_review(stage_all=True) to re-submit",
-            ]
+        result = _build_unchanged_result(state, current_attempts, staged_files, warnings)
         session.audit_log("request_code_review", {}, "unchanged", result)
         return result
 
-    # All preconditions met — now increment the attempt counter
+    # 7. Execute review
     attempt = session.increment_review_attempts(task_id)
-
-    # Pass previous issues to the reviewer so it can verify they were addressed
     previous_issues = state.last_review_issues if attempt >= 2 else None
 
-    # Perform the review
+    changed_files = await _get_changed_files()
+    files_content = _read_file_contents(changed_files)
+
     review_result = await _perform_review(
         diff=diff,
         files_content=files_content,
@@ -468,38 +550,22 @@ async def request_code_review(
     status = review_result["status"]
     issues = review_result["issues"]
 
-    # Update session state
+    # 8. Update session state
     state = session.load_session() or session.SessionState()
     state.last_review_status = status
     state.last_review_diff_hash = await _git_diff_staged_hash()
     state.last_review_issues = issues
     session.save_session(state)
 
-    result = {
-        "status": status,
-        "issues": issues,
-        "attempt": attempt,
-        "staged": staged_files,
-        "warnings": warnings,
-    }
-    if "parse_error" in review_result:
-        result["parse_error"] = review_result["parse_error"]
-
-    # Add next_steps based on review status
-    if status == "APPROVED":
-        result["next_steps"] = [
-            "1. attempt_commit(message='your commit message') to commit",
-        ]
-    elif status == "REJECTED":
-        result["next_steps"] = [
-            "1. Fix the issues listed above",
-            "2. request_code_review(stage_all=True) to re-submit",
-        ]
-    elif status == "ESCALATED":
-        result["next_steps"] = [
-            "1. Stop working on this task — it is now escalated",
-            "2. Call next_ready() to get a different task",
-        ]
+    # 9. Build and return result
+    result = _build_review_result(
+        status=status,
+        issues=issues,
+        attempt=attempt,
+        staged_files=staged_files,
+        warnings=warnings,
+        parse_error=review_result.get("parse_error"),
+    )
 
     session.audit_log("request_code_review", {}, status.lower(), result)
     return result
