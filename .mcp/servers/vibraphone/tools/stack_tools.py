@@ -97,17 +97,27 @@ def _update_env_var(key: str, value: str, project_root: Path) -> bool:
 
 
 def _render_component_recipes(name: str, root: str, commands: dict[str, str]) -> str:
-    """Render per-component Justfile recipes for a single component."""
+    """Render per-component Justfile recipes for a single component.
+
+    Per-component recipes are marked [private] so they don't clutter `just --list`.
+    Users call the aggregate test/lint/format recipes instead.
+    """
     lines: list[str] = []
 
+    lines.append(f"# Run {name} tests")
+    lines.append("[private]")
     lines.append(f"test-{name} *ARGS:")
     lines.append(f"    cd {root} && {commands['test_command']} {{{{ARGS}}}}")
     lines.append("")
 
+    lines.append(f"# Run {name} linter")
+    lines.append("[private]")
     lines.append(f"lint-{name}:")
     lines.append(f"    cd {root} && {commands['lint_command']}")
     lines.append("")
 
+    lines.append(f"# Run {name} formatter")
+    lines.append("[private]")
     lines.append(f"format-{name}:")
     lines.append(f"    cd {root} && {commands['format_command']}")
 
@@ -126,34 +136,37 @@ def _render_justfile(components: dict[str, dict[str, Any]]) -> str:
     sections.append("")
 
     # Quality gate
-    sections.append("# --- Quality Gate ---")
+    sections.append("# Run lint + test")
+    sections.append("[group: 'quality-gate']")
     sections.append("check: lint test")
     sections.append('    @echo "Quality gate passed."')
     sections.append("")
 
     # Aggregate test
-    sections.append("# --- Testing ---")
     test_deps = " ".join(f"test-{n}" for n in names)
+    sections.append("# Run all tests")
+    sections.append("[group: 'quality-gate']")
     sections.append(f"test *ARGS: {test_deps}")
     sections.append('    @echo "All tests passed."')
     sections.append("")
 
     # Aggregate lint
-    sections.append("# --- Linting ---")
     lint_deps = " ".join(f"lint-{n}" for n in names)
+    sections.append("# Run all linters")
+    sections.append("[group: 'quality-gate']")
     sections.append(f"lint: {lint_deps}")
     sections.append('    @echo "All linting passed."')
     sections.append("")
 
     # Aggregate format
-    sections.append("# --- Formatting ---")
     format_deps = " ".join(f"format-{n}" for n in names)
+    sections.append("# Run all formatters")
+    sections.append("[group: 'quality-gate']")
     sections.append(f"format: {format_deps}")
     sections.append('    @echo "All formatting done."')
     sections.append("")
 
     # Per-component recipes
-    sections.append("# --- Per-Component Recipes ---")
     for name, comp in components.items():
         root = comp.get("root", f"./{name}")
         defaults = STACK_DEFAULTS.get(comp.get("language", ""), {})
@@ -165,50 +178,67 @@ def _render_justfile(components: dict[str, dict[str, Any]]) -> str:
         sections.append(_render_component_recipes(name, root, commands))
         sections.append("")
 
-    # Universal recipes
-    sections.append("# --- Git Worktrees ---")
+    # Worktree recipes
+    sections.append("# Create worktree for a task")
+    sections.append("[group: 'worktree']")
     sections.append("start-task id:")
     sections.append('    @echo "Creating worktree for {{id}}..."')
     sections.append("    git worktree add -b feat/{{id}} ./worktrees/{{id}} main")
     sections.append('    @echo "Worktree ready at ./worktrees/{{id}}"')
     sections.append("")
+    sections.append("# Merge task branch into main")
+    sections.append("[group: 'worktree']")
     sections.append("merge-task id:")
     sections.append('    @echo "Merging task {{id}}..."')
     sections.append("    git rebase main feat/{{id}}")
     sections.append('    git merge --no-ff feat/{{id}} -m "Merge feat/{{id}} into main"')
     sections.append('    @echo "Merged feat/{{id}} into main"')
     sections.append("")
+    sections.append("# Remove worktree and branch for a task")
+    sections.append("[group: 'worktree']")
     sections.append("cleanup-task id:")
     sections.append('    @echo "Cleaning up task {{id}}..."')
     sections.append("    git worktree remove ./worktrees/{{id}} --force")
     sections.append("    git branch -D feat/{{id}} 2>/dev/null || true")
     sections.append('    @echo "Cleaned up feat/{{id}}"')
     sections.append("")
+    sections.append("# List active worktrees")
+    sections.append("[group: 'worktree']")
     sections.append("list-worktrees:")
     sections.append("    git worktree list")
     sections.append("")
 
-    # Beads
-    sections.append("# --- Beads ---")
+    # Beads recipes
+    sections.append("# Initialize beads database")
+    sections.append("[group: 'beads']")
     sections.append("beads-init:")
     sections.append("    br init")
     sections.append('    @echo "Beads initialized."')
     sections.append("")
+    sections.append("# Show all tasks as JSON")
+    sections.append("[group: 'beads']")
     sections.append("beads-status:")
     sections.append("    br list --json")
     sections.append("")
+    sections.append("# Show unblocked tasks as JSON")
+    sections.append("[group: 'beads']")
     sections.append("beads-ready:")
     sections.append("    br ready --json")
     sections.append("")
+    sections.append("# Flush beads sync queue")
+    sections.append("[group: 'beads']")
     sections.append("beads-sync:")
     sections.append("    br sync --flush-only")
     sections.append("")
+    sections.append("# Add a task interactively")
+    sections.append("[group: 'beads']")
     sections.append("add-task:")
     sections.append("    uv run python scripts/add_task.py")
     sections.append("")
 
-    # Bootstrap
-    sections.append("# --- Bootstrap ---")
+    # Setup recipes
+    sections.append("# Set up project from scratch")
+    sections.append("[group: 'setup']")
     sections.append("bootstrap:")
     sections.append('    @echo "Bootstrapping Vibraphone project..."')
     sections.append('    @echo "Checking prerequisites..."')
@@ -225,8 +255,22 @@ def _render_justfile(components: dict[str, dict[str, Any]]) -> str:
     sections.append('    @echo "Ready. Run /gsd:new-project to start planning."')
     sections.append("")
 
-    # Review
-    sections.append("# --- Review (standalone, for CI) ---")
+    # Reset recipe
+    sections.append("# Reset template to blank slate (testing only)")
+    sections.append("[group: 'setup']")
+    sections.append("reset:")
+    sections.append('    @echo "Resetting template to blank slate..."')
+    sections.append("    git worktree list --porcelain | grep '^worktree' | grep '/worktrees/' | cut -d' ' -f2 | xargs -r -I{} git worktree remove --force {}")
+    sections.append("    rm -rf .vibraphone/ .beads/ .planning/ worktrees/")
+    sections.append("    rm -rf src/* tests/unit/* tests/integration/*")
+    sections.append("    rm -rf .venv __pycache__ .coverage htmlcov .ruff_cache node_modules")
+    sections.append("    git checkout -- .")
+    sections.append('    @echo "Done. Run \'just bootstrap\' to reinitialize."')
+    sections.append("")
+
+    # Review recipe
+    sections.append("# Run standalone code review on files")
+    sections.append("[group: 'quality-gate']")
     sections.append("review *FILES:")
     sections.append("    uv run python scripts/review.py {{FILES}}")
     sections.append("")
