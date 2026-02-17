@@ -82,6 +82,40 @@ func TestHasBrokenLinks(t *testing.T) {
 	}
 }
 
+func TestGetResult(t *testing.T) {
+	tests := []struct {
+		name   string
+		result *result.Result
+	}{
+		{
+			name:   "nil result",
+			result: nil,
+		},
+		{
+			name:   "empty result",
+			result: &result.Result{BrokenLinks: []result.LinkResult{}},
+		},
+		{
+			name: "result with broken links",
+			result: &result.Result{
+				BrokenLinks: []result.LinkResult{
+					{URL: "https://example.com/missing", StatusCode: 404},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model := Model{result: tt.result}
+			got := model.GetResult()
+			if got != tt.result {
+				t.Errorf("GetResult() = %v, want %v", got, tt.result)
+			}
+		})
+	}
+}
+
 func TestRenderSummary_NilResult(t *testing.T) {
 	output := RenderSummary(nil)
 	if output == "" {
