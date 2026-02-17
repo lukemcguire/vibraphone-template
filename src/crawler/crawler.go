@@ -35,7 +35,7 @@ type Crawler struct {
 // The progressCh parameter is optional; pass nil to disable progress events.
 func New(cfg Config, progressCh chan<- CrawlEvent) *Crawler {
 	if cfg.Concurrency <= 0 {
-		cfg.Concurrency = 17
+		cfg.Concurrency = 10
 	}
 	if cfg.RequestTimeout <= 0 {
 		cfg.RequestTimeout = 10 * time.Second
