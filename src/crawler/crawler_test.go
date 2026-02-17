@@ -59,6 +59,18 @@ func newTestServer() *httptest.Server {
 	return httptest.NewServer(mux)
 }
 
+// mustNewCrawler creates a crawler or fails the test.
+func mustNewCrawler(t *testing.T, cfg crawler.Config, progressCh chan<- crawler.CrawlEvent) *crawler.Crawler {
+	t.Helper()
+	c, err := crawler.New(cfg, progressCh)
+	if err != nil {
+		t.Fatalf("crawler.New() error: %v", err)
+	}
+	return c
+}
+
+// TestCrawlerIntegration verifies the full crawl flow from start URL through
+// discovered links, including detection of broken links.
 func TestCrawlerIntegration(t *testing.T) {
 	ts := newTestServer()
 	defer ts.Close()
@@ -69,7 +81,7 @@ func TestCrawlerIntegration(t *testing.T) {
 		RequestTimeout: 5 * time.Second,
 	}
 
-	c := crawler.New(cfg, nil)
+	c := mustNewCrawler(t, cfg, nil)
 	result, err := c.Run(context.Background())
 	if err != nil {
 		t.Fatalf("Run() returned error: %v", err)
@@ -96,6 +108,8 @@ func TestCrawlerIntegration(t *testing.T) {
 	}
 }
 
+// TestCrawlerDeduplication verifies that cyclic link graphs are handled
+// correctly without infinite loops or duplicate URL checks.
 func TestCrawlerDeduplication(t *testing.T) {
 	// Server where every page links to every other page (cycle)
 	mux := http.NewServeMux()
@@ -137,7 +151,7 @@ func TestCrawlerDeduplication(t *testing.T) {
 		RequestTimeout: 5 * time.Second,
 	}
 
-	c := crawler.New(cfg, nil)
+	c := mustNewCrawler(t, cfg, nil)
 	result, err := c.Run(context.Background())
 	if err != nil {
 		t.Fatalf("Run() returned error: %v", err)
@@ -154,6 +168,8 @@ func TestCrawlerDeduplication(t *testing.T) {
 	}
 }
 
+// TestCrawlerCancellation verifies that the crawler responds correctly to
+// context cancellation without goroutine leaks.
 func TestCrawlerCancellation(t *testing.T) {
 	ts := newTestServer()
 	defer ts.Close()
@@ -164,7 +180,7 @@ func TestCrawlerCancellation(t *testing.T) {
 		RequestTimeout: 5 * time.Second,
 	}
 
-	c := crawler.New(cfg, nil)
+	c := mustNewCrawler(t, cfg, nil)
 
 	// Cancel context immediately
 	ctx, cancel := context.WithCancel(context.Background())
@@ -237,6 +253,8 @@ func newDepthTestServer() *httptest.Server {
 	return httptest.NewServer(mux)
 }
 
+// TestCrawlerMaxDepthLimitsInternalCrawling verifies that MaxDepth restricts
+// crawling to the specified depth while still validating external links.
 func TestCrawlerMaxDepthLimitsInternalCrawling(t *testing.T) {
 	ts := newDepthTestServer()
 	defer ts.Close()
@@ -248,7 +266,7 @@ func TestCrawlerMaxDepthLimitsInternalCrawling(t *testing.T) {
 		MaxDepth:       1, // Only / (depth 0) and /depth1 (depth 1)
 	}
 
-	c := crawler.New(cfg, nil)
+	c := mustNewCrawler(t, cfg, nil)
 	result, err := c.Run(context.Background())
 	if err != nil {
 		t.Fatalf("Run() returned error: %v", err)
@@ -265,6 +283,8 @@ func TestCrawlerMaxDepthLimitsInternalCrawling(t *testing.T) {
 	}
 }
 
+// TestCrawlerMaxDepthZeroMeansUnlimited verifies that MaxDepth=0 allows
+// unlimited depth crawling.
 func TestCrawlerMaxDepthZeroMeansUnlimited(t *testing.T) {
 	ts := newDepthTestServer()
 	defer ts.Close()
@@ -276,7 +296,7 @@ func TestCrawlerMaxDepthZeroMeansUnlimited(t *testing.T) {
 		MaxDepth:       0, // unlimited (default)
 	}
 
-	c := crawler.New(cfg, nil)
+	c := mustNewCrawler(t, cfg, nil)
 	result, err := c.Run(context.Background())
 	if err != nil {
 		t.Fatalf("Run() returned error: %v", err)

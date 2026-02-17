@@ -82,7 +82,10 @@ func buildCrawlerConfig(opts *cliFlags, rawURL string) crawler.Config {
 // runTUI creates and runs the TUI, returning the final model.
 func runTUI(ctx context.Context, cancel context.CancelFunc, cfg crawler.Config) (tui.Model, error) {
 	progressCh := make(chan crawler.CrawlEvent, 100)
-	crawlerInstance := crawler.New(cfg, progressCh)
+	crawlerInstance, err := crawler.New(cfg, progressCh)
+	if err != nil {
+		return tui.Model{}, fmt.Errorf("create crawler: %w", err)
+	}
 
 	tuiModel := tui.NewModel(ctx, cancel, crawlerInstance, progressCh)
 	program := tea.NewProgram(tuiModel)

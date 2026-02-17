@@ -24,7 +24,7 @@ type Crawler struct {
 	client        *http.Client
 	limiter       *rate.Limiter
 	robotsChecker *RobotsChecker
-	visited       sync.Map
+	visited       *VisitedTracker
 	results       []result.LinkResult
 	mu            sync.Mutex
 	total         int
@@ -33,7 +33,8 @@ type Crawler struct {
 
 // New creates a Crawler with the given configuration.
 // The progressCh parameter is optional; pass nil to disable progress events.
-func New(cfg Config, progressCh chan<- CrawlEvent) *Crawler {
+// Returns an error if the visited tracker cannot be initialized.
+func New(cfg Config, progressCh chan<- CrawlEvent) (*Crawler, error) {
 	if cfg.Concurrency <= 0 {
 		cfg.Concurrency = 10
 	}
@@ -55,18 +56,42 @@ func New(cfg Config, progressCh chan<- CrawlEvent) *Crawler {
 	// Separate client for robots.txt with shorter timeout
 	robotsClient := &http.Client{Timeout: 5 * time.Second}
 
+	// Create disk-backed visited tracker for production-scale crawls
+	visited, err := NewVisitedTracker()
+	if err != nil {
+		return nil, fmt.Errorf("create visited tracker: %w", err)
+	}
+
 	return &Crawler{
 		cfg:           cfg,
 		client:        &http.Client{},
 		limiter:       limiter,
 		robotsChecker: NewRobotsChecker(robotsClient),
+		visited:       visited,
 		progressCh:    progressCh,
-	}
+	}, nil
 }
 
 // Run executes the crawl starting from cfg.StartURL and returns broken link results.
 func (c *Crawler) Run(ctx context.Context) (*result.Result, error) {
 	start := time.Now()
+
+	// Defensive check: ensure crawler was constructed via New()
+	if c.visited == nil {
+		return nil, fmt.Errorf("crawler not properly initialized: visited tracker is nil")
+	}
+
+	// Ensure visited tracker is cleaned up on exit
+	defer func() {
+		if closeErr := c.visited.Close(); closeErr != nil {
+			// Report cleanup error via progress channel if available
+			if c.progressCh != nil {
+				c.progressCh <- CrawlEvent{
+					Error: fmt.Sprintf("visited tracker cleanup: %v", closeErr),
+				}
+			}
+		}
+	}()
 
 	startURL, err := urlutil.Normalize(c.cfg.StartURL)
 	if err != nil {
@@ -85,7 +110,7 @@ func (c *Crawler) Run(ctx context.Context) (*result.Result, error) {
 	var pendingJobs sync.WaitGroup
 
 	// Mark start URL as visited before enqueueing.
-	c.visited.Store(startURL, true)
+	c.visited.Visit(startURL)
 
 	// Use errgroup for structured goroutine management
 	errGroup, groupCtx := errgroup.WithContext(ctx)
@@ -203,7 +228,7 @@ func (c *Crawler) Run(ctx context.Context) (*result.Result, error) {
 					}
 					continue
 				}
-				if _, loaded := c.visited.LoadOrStore(normalized, true); loaded {
+				if !c.visited.VisitIfNew(normalized) {
 					continue
 				}
 				isExternal := !urlutil.IsSameDomain(normalized, startHost)

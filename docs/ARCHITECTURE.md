@@ -64,30 +64,36 @@ C4Component
         Component(tuipkg, "tui", "Go", "Bubble Tea model with live progress and Lip Gloss summary")
         Component(crawler, "crawler", "Go", "Concurrent crawl engine with worker pool")
         Component(robots, "crawler/robots", "Go", "RobotsChecker with 1-hour cache for robots.txt compliance")
+        Component(visited, "crawler/visited", "Go", "Disk-backed bloom filter for URL deduplication")
+        Component(memory, "crawler/memory", "Go", "Memory pressure monitoring with SetMemoryLimit")
         Component(events, "crawler/events", "Go", "Progress event types for TUI integration")
         Component(extract, "crawler/extract", "Go", "HTML tokenizer-based link extraction")
         Component(urlutil, "urlutil", "Go", "URL filtering, normalization, domain checks")
         Component(result, "result", "Go", "Link result types and output formatting")
     }
     System_Ext(target, "Target Website", "Serves HTML pages and robots.txt over HTTP/HTTPS")
+    System_Ext(disk, "OS Temp Directory", "Stores bloom filter mmap files")
     Rel(main, tuipkg, "Creates Model, runs tea.Program")
     Rel(tuipkg, crawler, "Starts crawl via tea.Cmd")
     Rel(tuipkg, events, "Reads CrawlEvent from progress channel")
     Rel(tuipkg, result, "Renders styled summary from Result")
     Rel(crawler, events, "Emits progress events")
     Rel(crawler, robots, "Checks URL allowability before enqueueing")
+    Rel(crawler, visited, "Uses VisitedTracker for URL dedup")
+    Rel(crawler, memory, "Checks memory pressure during crawl")
     Rel(crawler, extract, "Extracts links from pages")
     Rel(crawler, urlutil, "Filters and classifies URLs")
     Rel(robots, target, "Fetches robots.txt per host")
     Rel(extract, urlutil, "Normalizes discovered URLs")
     Rel(crawler, result, "Produces link results")
+    Rel(visited, disk, "Creates temp file for bloom filter")
 ```
 
 ---
 
 ## Data Model
 
-Core types and their relationships (no database — all in-memory).
+Core types and their relationships (no database — all in-memory except bloom filter temp file).
 
 ```mermaid
 classDiagram
@@ -140,11 +146,33 @@ classDiagram
         *RobotsData data
         Time fetchedAt
     }
+    class VisitedTracker {
+        sync.Mutex mu
+        *BloomFilter filter
+        *os.File file
+        MMap mmap
+        string tmpPath
+        uint64 count
+        uint64 syncEvery
+    }
+    class MemoryWatcher {
+        sync.RWMutex mu
+        int64 limitBytes
+        func callback
+        ThrottleLevel lastLevel
+    }
+    class ThrottleLevel {
+        <<enumeration>>
+        ThrottleNormal
+        ThrottleWarning
+        ThrottleCritical
+    }
     CrawlResult --> CrawlJob
     CrawlResult --> LinkResult
     Result --> LinkResult
     Result --> CrawlStats
     RobotsChecker --> cachedRobots
+    MemoryWatcher --> ThrottleLevel
 ```
 
 ---
@@ -178,7 +206,7 @@ sequenceDiagram
             W->>E: ExtractLinks(body, baseURL)
             E-->>W: []discovered links
             W-->>C: CrawlResult{Links, Result}
-            C->>C: Enqueue new links (dedup via visited map)
+            C->>C: Enqueue new links (dedup via VisitedTracker bloom filter)
         else External link
             W-->>C: CrawlResult{Result}
         end
