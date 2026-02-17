@@ -65,12 +65,13 @@ Plans:
   4. Tool detects and reports DNS resolution failures as broken links
   5. Tool detects and reports redirect loops as broken
   6. Each broken link report shows the source page where it was found
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
-- [ ] 03-01: TBD
-- [ ] 03-02: TBD
-- [ ] 03-03: TBD
+- [ ] 03-01-PLAN.md — Error classification types and rate limiting foundation
+- [ ] 03-02-PLAN.md — robots.txt compliance with caching
+- [ ] 03-03-PLAN.md — Retry logic and redirect loop detection
+- [ ] 03-04-PLAN.md — CLI flags and grouped error display
 
 ### Phase 4: Configuration & Output
 **Goal**: CLI flexibility and machine-readable output for automation/CI use cases
@@ -111,6 +112,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 |-------|----------------|--------|-----------|
 | 1. Core Crawler Foundation | 0/3 | Planned | - |
 | 2. Bubble Tea TUI | 0/2 | Planned | - |
-| 3. Politeness & Reliability | 0/3 | Not started | - |
+| 3. Politeness & Reliability | 0/4 | Planned | - |
 | 4. Configuration & Output | 0/2 | Not started | - |
 | 5. Production Polish | 0/2 | Not started | - |
