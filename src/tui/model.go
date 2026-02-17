@@ -113,3 +113,8 @@ func (m Model) View() string {
 func (m Model) HasBrokenLinks() bool {
 	return m.result != nil && len(m.result.BrokenLinks) > 0
 }
+
+// GetResult returns the crawl result for output formatting.
+func (m Model) GetResult() *result.Result {
+	return m.result
+}
