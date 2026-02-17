@@ -204,4 +204,3 @@ func (v *VisitedTracker) LastError() error {
 	defer v.mu.Unlock()
 	return v.lastErr
 }
-

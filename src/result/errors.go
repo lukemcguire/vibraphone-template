@@ -15,6 +15,7 @@ const (
 	CategoryTimeout           ErrorCategory = "timeout"
 	CategoryDNSFailure        ErrorCategory = "dns_failure"
 	CategoryConnectionRefused ErrorCategory = "connection_refused"
+	CategoryAuthRequired      ErrorCategory = "auth_required"
 	Category4xx               ErrorCategory = "4xx"
 	Category5xx               ErrorCategory = "5xx"
 	CategoryRedirectLoop      ErrorCategory = "redirect_loop"
@@ -31,6 +32,10 @@ func ClassifyError(err error, statusCode int, isRedirectLoop bool) ErrorCategory
 
 	// Check HTTP status codes
 	if statusCode > 0 {
+		// 401/403 are auth-gated, not broken links
+		if statusCode == 401 || statusCode == 403 {
+			return CategoryAuthRequired
+		}
 		if statusCode >= 400 && statusCode <= 499 {
 			return Category4xx
 		}
@@ -80,6 +85,8 @@ func FormatCategory(cat ErrorCategory) string {
 		return "DNS Failures"
 	case CategoryConnectionRefused:
 		return "Connection Refused"
+	case CategoryAuthRequired:
+		return "Requires Authentication"
 	case Category4xx:
 		return "Client Errors (4xx)"
 	case Category5xx:
