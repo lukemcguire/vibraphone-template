@@ -5,33 +5,34 @@
 See: .planning/PROJECT.md (updated 2026-02-13)
 
 **Core value:** Reliably find every dead link on a website by crawling all same-domain pages and checking every outbound link — with output that's prettier than it has any right to be.
-**Current focus:** Phase 1 - Core Crawler Foundation
+**Current focus:** Phase 3 - Politeness & Reliability
 
 ## Current Position
 
-Phase: 1 of 5 (Core Crawler Foundation)
-Plan: 0 of 3 in current phase
-Status: Ready to plan
-Last activity: 2026-02-13 — Roadmap created
+Phase: 3 of 5 (Politeness & Reliability)
+Plan: 5 of 5 in current phase
+Status: Phase 3 complete
+Last activity: 2026-02-17 — Plan 03-05 (Gap Closure) completed
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [████████░░] 60%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 0
-- Average duration: N/A
-- Total execution time: 0.0 hours
+- Total plans completed: 5
+- Average duration: ~15 min
+- Total execution time: 1.5 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 01-core-crawler | 4 | ~60min | ~15min |
+| 03-politeness | 5 | ~30min | ~6min |
 
 **Recent Trend:**
-- Last 5 plans: None yet
-- Trend: N/A
+- Last 5 plans: 03-01 through 03-05
+- Trend: Steady progress
 
 *Updated after each plan completion*
 
@@ -46,6 +47,8 @@ Recent decisions affecting current work:
 - No Cobra, use Bubble Tea for arg handling (Charm stack handles CLI natively)
 - golang.org/x/net/html for parsing (standard Go HTML parser)
 - Static HTML only for v1 (keeps scope manageable)
+- Use single flag.Int with long-form names (no duplicate short/long pairs)
+- Change MaxRetries zero-check to negative sentinel to allow explicit zero
 
 ### Pending Todos
 
@@ -53,12 +56,10 @@ None yet.
 
 ### Blockers/Concerns
 
-**Phase 1 preparation:**
-- Research identified critical concurrency pitfalls (goroutine leaks, HTTP body leaks, unbounded map growth) that require architectural patterns from start
-- Worker pool and HTTP client configuration must be correct initially to avoid rewrites
+None currently.
 
 ## Session Continuity
 
-Last session: 2026-02-13
-Stopped at: Roadmap and STATE.md created, ready for Phase 1 planning
+Last session: 2026-02-17
+Stopped at: Phase 3 Plan 5 (Gap Closure) completed
 Resume file: None
