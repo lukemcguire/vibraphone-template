@@ -22,6 +22,20 @@ func TestClassifyError(t *testing.T) {
 			want:           CategoryRedirectLoop,
 		},
 		{
+			name:           "401 status is auth required",
+			err:            nil,
+			statusCode:     401,
+			isRedirectLoop: false,
+			want:           CategoryAuthRequired,
+		},
+		{
+			name:           "403 status is auth required",
+			err:            nil,
+			statusCode:     403,
+			isRedirectLoop: false,
+			want:           CategoryAuthRequired,
+		},
+		{
 			name:           "4xx status",
 			err:            nil,
 			statusCode:     404,
@@ -89,6 +103,7 @@ func TestFormatCategory(t *testing.T) {
 		{CategoryTimeout, "Timeouts"},
 		{CategoryDNSFailure, "DNS Failures"},
 		{CategoryConnectionRefused, "Connection Refused"},
+		{CategoryAuthRequired, "Requires Authentication"},
 		{Category4xx, "Client Errors (4xx)"},
 		{Category5xx, "Server Errors (5xx)"},
 		{CategoryRedirectLoop, "Redirect Loops"},

@@ -21,10 +21,10 @@ const (
 // MemoryWatcher monitors memory pressure and triggers throttling callbacks.
 // It uses runtime/debug.SetMemoryLimit for soft memory limits (Go 1.19+).
 type MemoryWatcher struct {
-	mu           sync.RWMutex
-	limitBytes   int64
-	callback     func(level ThrottleLevel)
-	lastLevel    ThrottleLevel
+	mu         sync.RWMutex
+	limitBytes int64
+	callback   func(level ThrottleLevel)
+	lastLevel  ThrottleLevel
 }
 
 // NewMemoryWatcher creates a memory watcher with the specified limit in MB.
