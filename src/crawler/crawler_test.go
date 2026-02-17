@@ -2,6 +2,7 @@ package crawler_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -27,22 +28,28 @@ func newTestServer() *httptest.Server {
 			http.NotFound(w, r)
 			return
 		}
-		_, _ = fmt.Fprint(w, `<html><body>
+		if _, err := fmt.Fprint(w, `<html><body>
 			<a href="/page1">Page 1</a>
 			<a href="/page2">Page 2</a>
 			<a href="https://external.example.com/resource">External</a>
-		</body></html>`)
+		</body></html>`); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	})
 
 	mux.HandleFunc("/page1", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = fmt.Fprint(w, `<html><body>
+		if _, err := fmt.Fprint(w, `<html><body>
 			<a href="/page2">Page 2 again</a>
 			<a href="/broken">Broken link</a>
-		</body></html>`)
+		</body></html>`); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	})
 
 	mux.HandleFunc("/page2", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = fmt.Fprint(w, `<html><body><p>No links here</p></body></html>`)
+		if _, err := fmt.Fprint(w, `<html><body><p>No links here</p></body></html>`); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	})
 
 	mux.HandleFunc("/broken", func(w http.ResponseWriter, r *http.Request) {
@@ -97,23 +104,29 @@ func TestCrawlerDeduplication(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
-		_, _ = fmt.Fprint(w, `<html><body>
+		if _, err := fmt.Fprint(w, `<html><body>
 			<a href="/a">A</a>
 			<a href="/b">B</a>
-		</body></html>`)
+		</body></html>`); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	})
 	mux.HandleFunc("/a", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = fmt.Fprint(w, `<html><body>
+		if _, err := fmt.Fprint(w, `<html><body>
 			<a href="/">Home</a>
 			<a href="/b">B</a>
 			<a href="/a">A self</a>
-		</body></html>`)
+		</body></html>`); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	})
 	mux.HandleFunc("/b", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = fmt.Fprint(w, `<html><body>
+		if _, err := fmt.Fprint(w, `<html><body>
 			<a href="/">Home</a>
 			<a href="/a">A</a>
-		</body></html>`)
+		</body></html>`); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 	})
 	ts := httptest.NewServer(mux)
 	defer ts.Close()
@@ -158,15 +171,120 @@ func TestCrawlerCancellation(t *testing.T) {
 	cancel()
 
 	done := make(chan struct{})
+	var runErr error
 	go func() {
-		_, _ = c.Run(ctx)
+		_, runErr = c.Run(ctx)
 		close(done)
 	}()
 
 	select {
 	case <-done:
-		// Good: Run returned without hanging
+		// Good: Run returned without hanging (no goroutine leak)
+		// Run() may return nil (graceful early exit) or a context-related error
+		if runErr != nil && !errors.Is(runErr, context.Canceled) {
+			t.Fatalf("unexpected error: %v", runErr)
+		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("Run() did not return after context cancellation (possible goroutine leak)")
+	}
+}
+
+// newDepthTestServer creates a server with a deep link hierarchy:
+// / -> /depth1 -> /depth2 -> /depth3
+// Each page also links to an external URL for validation testing.
+func newDepthTestServer() *httptest.Server {
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		if _, err := fmt.Fprint(w, `<html><body>
+			<a href="/depth1">Depth 1</a>
+			<a href="https://external.example.com/from-root">External from root</a>
+		</body></html>`); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	})
+
+	mux.HandleFunc("/depth1", func(w http.ResponseWriter, r *http.Request) {
+		if _, err := fmt.Fprint(w, `<html><body>
+			<a href="/depth2">Depth 2</a>
+			<a href="https://external.example.com/from-depth1">External from depth1</a>
+		</body></html>`); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	})
+
+	mux.HandleFunc("/depth2", func(w http.ResponseWriter, r *http.Request) {
+		if _, err := fmt.Fprint(w, `<html><body>
+			<a href="/depth3">Depth 3</a>
+			<a href="https://external.example.com/from-depth2">External from depth2</a>
+		</body></html>`); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	})
+
+	mux.HandleFunc("/depth3", func(w http.ResponseWriter, r *http.Request) {
+		if _, err := fmt.Fprint(w, `<html><body>
+			<a href="https://external.example.com/from-depth3">External from depth3</a>
+		</body></html>`); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+	})
+
+	return httptest.NewServer(mux)
+}
+
+func TestCrawlerMaxDepthLimitsInternalCrawling(t *testing.T) {
+	ts := newDepthTestServer()
+	defer ts.Close()
+
+	cfg := crawler.Config{
+		StartURL:       ts.URL,
+		Concurrency:    2,
+		RequestTimeout: 5 * time.Second,
+		MaxDepth:       1, // Only / (depth 0) and /depth1 (depth 1)
+	}
+
+	c := crawler.New(cfg, nil)
+	result, err := c.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run() returned error: %v", err)
+	}
+
+	// With MaxDepth=1, should only crawl:
+	// - / (depth 0, start URL)
+	// - /depth1 (depth 1)
+	// Should NOT crawl /depth2 or /depth3 (would be depth 2 and 3)
+	// External links from crawled pages are still validated (not crawled)
+	// Expected total: 2 internal + 2 external = 4
+	if result.Stats.TotalChecked != 4 {
+		t.Errorf("expected 4 URLs checked (2 internal + 2 external), got %d", result.Stats.TotalChecked)
+	}
+}
+
+func TestCrawlerMaxDepthZeroMeansUnlimited(t *testing.T) {
+	ts := newDepthTestServer()
+	defer ts.Close()
+
+	cfg := crawler.Config{
+		StartURL:       ts.URL,
+		Concurrency:    2,
+		RequestTimeout: 5 * time.Second,
+		MaxDepth:       0, // unlimited (default)
+	}
+
+	c := crawler.New(cfg, nil)
+	result, err := c.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run() returned error: %v", err)
+	}
+
+	// With MaxDepth=0 (unlimited), should crawl all 4 internal pages
+	// and validate all 4 external links = 8 total
+	if result.Stats.TotalChecked != 8 {
+		t.Errorf("expected 8 URLs checked (4 internal + 4 external), got %d", result.Stats.TotalChecked)
 	}
 }

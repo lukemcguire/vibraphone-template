@@ -18,6 +18,7 @@ type Config struct {
 	RateLimit      int           // Requests per second (default 10)
 	UserAgent      string        // HTTP User-Agent header (default "zombiecrawl/1.0")
 	RetryPolicy    RetryPolicy   // Retry policy for failed requests
+	MaxDepth       int           // Maximum crawl depth (0 = unlimited)
 }
 
 // CrawlJob represents a URL to be checked.
@@ -25,6 +26,7 @@ type CrawlJob struct {
 	URL        string // The URL to check
 	SourcePage string // The page where this link was found
 	IsExternal bool   // Whether this is an external link (validate only, don't crawl)
+	Depth      int    // Current crawl depth (0 = start URL)
 }
 
 // CrawlResult represents the result of checking a URL.
@@ -56,8 +58,8 @@ func CheckURL(ctx context.Context, client *http.Client, job CrawlJob, cfg Config
 			currentURL := req.URL.String()
 
 			// Check if we've seen this URL in the current chain
-			for _, v := range visitedInChain {
-				if v == currentURL {
+			for _, visitedURL := range visitedInChain {
+				if visitedURL == currentURL {
 					isRedirectLoop = true
 					return http.ErrUseLastResponse
 				}
@@ -234,5 +236,6 @@ func DefaultConfig(startURL string) Config {
 		RateLimit:      10,
 		UserAgent:      "zombiecrawl/1.0 (+https://github.com/lukemcguire/zombiecrawl)",
 		RetryPolicy:    DefaultRetryPolicy(),
+		MaxDepth:       0, // unlimited
 	}
 }

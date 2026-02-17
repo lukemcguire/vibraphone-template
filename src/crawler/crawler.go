@@ -145,7 +145,7 @@ func (c *Crawler) Run(ctx context.Context) (*result.Result, error) {
 
 	// Seed the first job.
 	pendingJobs.Add(1)
-	jobs <- CrawlJob{URL: startURL, SourcePage: "", IsExternal: false}
+	jobs <- CrawlJob{URL: startURL, SourcePage: "", IsExternal: false, Depth: 0}
 
 	// Close results channel when all work is done (managed via errgroup)
 	errGroup.Go(func() error {
@@ -189,6 +189,7 @@ func (c *Crawler) Run(ctx context.Context) (*result.Result, error) {
 		// Enqueue discovered links from internal pages (skip if context cancelled)
 		if !crawlResult.Job.IsExternal && ctx.Err() == nil {
 			startHost := hostFromURL(startURL)
+			nextDepth := crawlResult.Job.Depth + 1
 			for _, link := range crawlResult.Links {
 				normalized, normErr := urlutil.Normalize(link)
 				if normErr != nil {
@@ -205,6 +206,11 @@ func (c *Crawler) Run(ctx context.Context) (*result.Result, error) {
 				if _, loaded := c.visited.LoadOrStore(normalized, true); loaded {
 					continue
 				}
+				isExternal := !urlutil.IsSameDomain(normalized, startHost)
+				// Depth limit applies only to same-domain pages; external links are validated regardless
+				if !isExternal && c.cfg.MaxDepth > 0 && nextDepth > c.cfg.MaxDepth {
+					continue
+				}
 				// Check robots.txt before enqueueing.
 				// Errors are treated as allow-all (fail-open) but we surface them via progress channel.
 				allowed, robotsErr := c.robotsChecker.Allowed(ctx, normalized, c.cfg.UserAgent)
@@ -218,12 +224,12 @@ func (c *Crawler) Run(ctx context.Context) (*result.Result, error) {
 				if !allowed {
 					continue // Skip disallowed URLs
 				}
-				isExternal := !urlutil.IsSameDomain(normalized, startHost)
 				pendingJobs.Add(1)
 				jobs <- CrawlJob{
 					URL:        normalized,
 					SourcePage: crawlResult.Job.URL,
 					IsExternal: isExternal,
+					Depth:      nextDepth,
 				}
 			}
 		}
