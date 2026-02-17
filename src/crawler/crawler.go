@@ -41,8 +41,8 @@ func New(cfg Config, progressCh chan<- CrawlEvent) (*Crawler, error) {
 	if cfg.RequestTimeout <= 0 {
 		cfg.RequestTimeout = 10 * time.Second
 	}
-	if cfg.RateLimit <= 0 {
-		cfg.RateLimit = 10
+	if cfg.Delay <= 0 {
+		cfg.Delay = 100
 	}
 	if cfg.UserAgent == "" {
 		cfg.UserAgent = "zombiecrawl/1.0 (+https://github.com/lukemcguire/zombiecrawl)"
@@ -51,7 +51,9 @@ func New(cfg Config, progressCh chan<- CrawlEvent) (*Crawler, error) {
 		cfg.RetryPolicy = DefaultRetryPolicy()
 	}
 
-	limiter := rate.NewLimiter(rate.Limit(cfg.RateLimit), cfg.RateLimit)
+	// Convert delay (ms) to rate: 100ms delay = 10 req/sec
+	initialRPS := 1000 / cfg.Delay
+	limiter := rate.NewLimiter(rate.Limit(initialRPS), initialRPS)
 
 	// Separate client for robots.txt with shorter timeout
 	robotsClient := &http.Client{Timeout: 5 * time.Second}

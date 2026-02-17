@@ -65,7 +65,7 @@ type Config struct {
 	StartURL       string        // The starting URL for the crawl
 	Concurrency    int           // Number of concurrent workers (default 17)
 	RequestTimeout time.Duration // Per-request timeout (default 10s)
-	RateLimit      int           // Requests per second (default 10)
+	Delay          int           // Delay between requests in milliseconds (default 100)
 	UserAgent      string        // HTTP User-Agent header (default "zombiecrawl/1.0")
 	RetryPolicy    RetryPolicy   // Retry policy for failed requests
 	MaxDepth       int           // Maximum crawl depth (0 = unlimited)
@@ -300,7 +300,7 @@ func DefaultConfig(startURL string) Config {
 		StartURL:       startURL,
 		Concurrency:    17,
 		RequestTimeout: 10 * time.Second,
-		RateLimit:      10,
+		Delay:          100,
 		UserAgent:      "zombiecrawl/1.0 (+https://github.com/lukemcguire/zombiecrawl)",
 		RetryPolicy:    DefaultRetryPolicy(),
 		MaxDepth:       0, // unlimited

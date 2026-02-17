@@ -19,7 +19,7 @@ import (
 // cliFlags holds parsed command-line flags.
 type cliFlags struct {
 	concurrency int
-	rateLimit   int
+	delay       int
 	retries     int
 	retryDelay  time.Duration
 	userAgent   string
@@ -33,7 +33,7 @@ type cliFlags struct {
 func parseFlags() *cliFlags {
 	opts := &cliFlags{}
 	flag.IntVar(&opts.concurrency, "concurrency", 10, "number of concurrent workers")
-	flag.IntVar(&opts.rateLimit, "rate-limit", 10, "requests per second")
+	flag.IntVar(&opts.delay, "delay", 100, "delay between requests in milliseconds")
 	flag.IntVar(&opts.retries, "retries", 2, "number of retries for transient errors")
 	flag.DurationVar(&opts.retryDelay, "retry-delay", time.Second, "base delay between retries")
 	flag.StringVar(&opts.userAgent, "user-agent", "zombiecrawl/1.0 (+https://github.com/lukemcguire/zombiecrawl)", "user agent string")
@@ -68,7 +68,7 @@ func buildCrawlerConfig(opts *cliFlags, rawURL string) crawler.Config {
 		StartURL:       rawURL,
 		Concurrency:    opts.concurrency,
 		RequestTimeout: 10 * time.Second,
-		RateLimit:      opts.rateLimit,
+		Delay:          opts.delay,
 		UserAgent:      opts.userAgent,
 		MaxDepth:       opts.depth,
 		RetryPolicy: crawler.RetryPolicy{
