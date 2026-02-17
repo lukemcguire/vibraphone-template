@@ -62,13 +62,14 @@ func isBinaryContentType(contentType string) bool {
 
 // Config holds crawler configuration.
 type Config struct {
-	StartURL       string        // The starting URL for the crawl
-	Concurrency    int           // Number of concurrent workers (default 17)
-	RequestTimeout time.Duration // Per-request timeout (default 10s)
-	Delay          int           // Delay between requests in milliseconds (default 100)
-	UserAgent      string        // HTTP User-Agent header (default "zombiecrawl/1.0")
-	RetryPolicy    RetryPolicy   // Retry policy for failed requests
-	MaxDepth       int           // Maximum crawl depth (0 = unlimited)
+	StartURL        string        // The starting URL for the crawl
+	Concurrency     int           // Number of concurrent workers (default 17)
+	RequestTimeout  time.Duration // Per-request timeout (default 10s)
+	Delay           int           // Delay between requests in milliseconds (default 100)
+	UserAgent       string        // HTTP User-Agent header (default "zombiecrawl/1.0")
+	RetryPolicy     RetryPolicy   // Retry policy for failed requests
+	MaxDepth        int           // Maximum crawl depth (0 = unlimited)
+	DisableAutoTune bool          // Disable adaptive rate limiting (use fixed rate from Delay)
 }
 
 // CrawlJob represents a URL to be checked.

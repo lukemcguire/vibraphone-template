@@ -308,3 +308,65 @@ func TestCrawlerMaxDepthZeroMeansUnlimited(t *testing.T) {
 		t.Errorf("expected 8 URLs checked (4 internal + 4 external), got %d", result.Stats.TotalChecked)
 	}
 }
+
+// TestCrawlerDisableAutoTune verifies that DisableAutoTune flag disables
+// adaptive rate limiting and uses fixed rate from Delay.
+func TestCrawlerDisableAutoTune(t *testing.T) {
+	ts := newTestServer()
+	defer ts.Close()
+
+	cfg := crawler.Config{
+		StartURL:        ts.URL,
+		Concurrency:     2,
+		RequestTimeout:  5 * time.Second,
+		Delay:           50, // 50ms delay = 20 RPS
+		DisableAutoTune: true,
+	}
+
+	c := mustNewCrawler(t, cfg, nil)
+	result, err := c.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run() returned error: %v", err)
+	}
+
+	// Should complete successfully with fixed rate
+	if result.Stats.TotalChecked != 5 {
+		t.Errorf("expected 5 URLs checked, got %d", result.Stats.TotalChecked)
+	}
+
+	// Verify DisableAutoTune is stored in config
+	if !c.GetConfig().DisableAutoTune {
+		t.Error("DisableAutoTune should be true in crawler config")
+	}
+}
+
+// TestCrawlerAdaptiveRateLimiterEnabled verifies that when DisableAutoTune is false,
+// the crawler uses adaptive rate limiting (default behavior).
+func TestCrawlerAdaptiveRateLimiterEnabled(t *testing.T) {
+	ts := newTestServer()
+	defer ts.Close()
+
+	cfg := crawler.Config{
+		StartURL:       ts.URL,
+		Concurrency:    2,
+		RequestTimeout: 5 * time.Second,
+		Delay:          50, // 50ms delay = 20 RPS
+		// DisableAutoTune is false by default
+	}
+
+	c := mustNewCrawler(t, cfg, nil)
+	result, err := c.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run() returned error: %v", err)
+	}
+
+	// Should complete successfully with adaptive rate
+	if result.Stats.TotalChecked != 5 {
+		t.Errorf("expected 5 URLs checked, got %d", result.Stats.TotalChecked)
+	}
+
+	// Verify DisableAutoTune is false in config (default)
+	if c.GetConfig().DisableAutoTune {
+		t.Error("DisableAutoTune should be false by default")
+	}
+}

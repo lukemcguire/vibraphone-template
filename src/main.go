@@ -18,15 +18,16 @@ import (
 
 // cliFlags holds parsed command-line flags.
 type cliFlags struct {
-	concurrency int
-	delay       int
-	retries     int
-	retryDelay  time.Duration
-	userAgent   string
-	depth       int
-	outputJSON  bool
-	outputCSV   bool
-	outputFile  string
+	concurrency     int
+	delay           int
+	disableAutoTune bool
+	retries         int
+	retryDelay      time.Duration
+	userAgent       string
+	depth           int
+	outputJSON      bool
+	outputCSV       bool
+	outputFile      string
 }
 
 // parseFlags parses command-line flags and returns the parsed values.
@@ -34,6 +35,7 @@ func parseFlags() *cliFlags {
 	opts := &cliFlags{}
 	flag.IntVar(&opts.concurrency, "concurrency", 10, "number of concurrent workers")
 	flag.IntVar(&opts.delay, "delay", 100, "delay between requests in milliseconds")
+	flag.BoolVar(&opts.disableAutoTune, "disable-auto-tune", false, "disable adaptive rate limiting (use fixed rate from --delay)")
 	flag.IntVar(&opts.retries, "retries", 2, "number of retries for transient errors")
 	flag.DurationVar(&opts.retryDelay, "retry-delay", time.Second, "base delay between retries")
 	flag.StringVar(&opts.userAgent, "user-agent", "zombiecrawl/1.0 (+https://github.com/lukemcguire/zombiecrawl)", "user agent string")
@@ -65,12 +67,13 @@ func validateFlags(opts *cliFlags) error {
 // buildCrawlerConfig creates a crawler.Config from flags and the target URL.
 func buildCrawlerConfig(opts *cliFlags, rawURL string) crawler.Config {
 	return crawler.Config{
-		StartURL:       rawURL,
-		Concurrency:    opts.concurrency,
-		RequestTimeout: 10 * time.Second,
-		Delay:          opts.delay,
-		UserAgent:      opts.userAgent,
-		MaxDepth:       opts.depth,
+		StartURL:        rawURL,
+		Concurrency:     opts.concurrency,
+		RequestTimeout:  10 * time.Second,
+		Delay:           opts.delay,
+		DisableAutoTune: opts.disableAutoTune,
+		UserAgent:       opts.userAgent,
+		MaxDepth:        opts.depth,
 		RetryPolicy: crawler.RetryPolicy{
 			MaxRetries: opts.retries,
 			BaseDelay:  opts.retryDelay,

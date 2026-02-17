@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/time/rate"
 
 	"github.com/lukemcguire/zombiecrawl/result"
 	"github.com/lukemcguire/zombiecrawl/urlutil"
@@ -22,7 +21,7 @@ import (
 type Crawler struct {
 	cfg           Config
 	client        *http.Client
-	limiter       *rate.Limiter
+	limiter       *AdaptiveLimiter
 	robotsChecker *RobotsChecker
 	visited       *VisitedTracker
 	results       []result.LinkResult
@@ -53,7 +52,13 @@ func New(cfg Config, progressCh chan<- CrawlEvent) (*Crawler, error) {
 
 	// Convert delay (ms) to rate: 100ms delay = 10 req/sec
 	initialRPS := 1000 / cfg.Delay
-	limiter := rate.NewLimiter(rate.Limit(initialRPS), initialRPS)
+	// Target RTT of 200ms for adaptive rate limiting
+	limiter := NewAdaptiveLimiter(initialRPS, 200*time.Millisecond)
+
+	// If DisableAutoTune is set, fix the rate (disable adaptation)
+	if cfg.DisableAutoTune {
+		limiter.SetRate(initialRPS)
+	}
 
 	// Separate client for robots.txt with shorter timeout
 	robotsClient := &http.Client{Timeout: 5 * time.Second}
@@ -132,7 +137,12 @@ func (c *Crawler) Run(ctx context.Context) (*result.Result, error) {
 						results <- CrawlResult{Job: job}
 						return fmt.Errorf("rate limiter wait: %w", waitErr)
 					}
+					// Track RTT for adaptive rate limiting
+					reqStart := time.Now()
 					crawlResult := CheckURLWithRetry(groupCtx, c.client, job, c.cfg, c.cfg.RetryPolicy)
+					rtt := time.Since(reqStart)
+					// Observe RTT for adaptive rate adjustment
+					c.limiter.ObserveRTT(rtt)
 					// Always send result - coordinator must receive it to call pendingJobs.Done()
 					results <- crawlResult
 				case <-groupCtx.Done():
@@ -295,4 +305,12 @@ func hostFromURL(rawURL string) string {
 		return rawURL
 	}
 	return parsedURL.Hostname()
+}
+
+// GetConfig returns a copy of the crawler's configuration.
+// This is primarily useful for testing and debugging.
+func (c *Crawler) GetConfig() Config {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.cfg
 }
