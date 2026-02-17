@@ -11,13 +11,13 @@ import (
 type ErrorCategory string
 
 const (
-	CategoryTimeout          ErrorCategory = "timeout"
-	CategoryDNSFailure       ErrorCategory = "dns_failure"
+	CategoryTimeout           ErrorCategory = "timeout"
+	CategoryDNSFailure        ErrorCategory = "dns_failure"
 	CategoryConnectionRefused ErrorCategory = "connection_refused"
-	Category4xx              ErrorCategory = "4xx"
-	Category5xx              ErrorCategory = "5xx"
-	CategoryRedirectLoop     ErrorCategory = "redirect_loop"
-	CategoryUnknown          ErrorCategory = "unknown"
+	Category4xx               ErrorCategory = "4xx"
+	Category5xx               ErrorCategory = "5xx"
+	CategoryRedirectLoop      ErrorCategory = "redirect_loop"
+	CategoryUnknown           ErrorCategory = "unknown"
 )
 
 // ClassifyError determines the error category based on the error, HTTP status code,
