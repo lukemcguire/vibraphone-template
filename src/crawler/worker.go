@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -60,7 +62,94 @@ func isBinaryContentType(contentType string) bool {
 	return false
 }
 
-// Config holds crawler configuration.
+// formatVerboseError creates detailed error messages for network errors when verbose mode is enabled.
+func formatVerboseError(err error, job CrawlJob, cfg Config) string {
+	if err == nil {
+		return ""
+	}
+
+	var netErr net.Error
+	var dnsErr *net.DNSError
+	var opErr *net.OpError
+	var urlErr *url.Error
+
+	baseMsg := err.Error()
+
+	// Check for URL error (wraps most HTTP errors)
+	if errors.As(err, &urlErr) {
+		// URL errors often wrap the actual network error
+		if urlErr.Err != nil {
+			if errors.As(urlErr.Err, &dnsErr) {
+				return fmt.Sprintf("DNS lookup failed for %s: %s", dnsErr.Name, dnsErr.Err)
+			}
+			if errors.As(urlErr.Err, &opErr) {
+				return formatVerboseOpError(opErr, job.URL, cfg)
+			}
+			if errors.Is(urlErr.Err, context.DeadlineExceeded) {
+				return fmt.Sprintf("Request timed out after %s (url: %s)", cfg.RequestTimeout, job.URL)
+			}
+		}
+	}
+
+	// Direct DNS error
+	if errors.As(err, &dnsErr) {
+		return fmt.Sprintf("DNS lookup failed for %s: %s", dnsErr.Name, dnsErr.Err)
+	}
+
+	// Direct net.OpError
+	if errors.As(err, &opErr) {
+		return formatVerboseOpError(opErr, job.URL, cfg)
+	}
+
+	// Timeout via net.Error interface
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return fmt.Sprintf("Request timed out after %s (url: %s)", cfg.RequestTimeout, job.URL)
+	}
+
+	// Context deadline exceeded
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Sprintf("Request timed out after %s (url: %s)", cfg.RequestTimeout, job.URL)
+	}
+
+	return baseMsg
+}
+
+// formatVerboseOpError formats net.OpError with detailed diagnostics.
+func formatVerboseOpError(opErr *net.OpError, urlStr string, cfg Config) string {
+	if opErr == nil {
+		return ""
+	}
+
+	// Extract host:port from the address
+	addr := "unknown"
+	if opErr.Addr != nil {
+		addr = opErr.Addr.String()
+	}
+
+	// Check for connection refused
+	if opErr.Op == "dial" && strings.Contains(opErr.Error(), "connection refused") {
+		return fmt.Sprintf("Connection refused to %s (url: %s)", addr, urlStr)
+	}
+
+	// Check for timeout
+	if opErr.Timeout() {
+		return fmt.Sprintf("Network operation '%s' timed out after %s (addr: %s, url: %s)", opErr.Op, cfg.RequestTimeout, addr, urlStr)
+	}
+
+	// Generic network error with context
+	return fmt.Sprintf("Network error during %s to %s: %s (url: %s)", opErr.Op, addr, opErr.Err, urlStr)
+}
+
+// getErrorMessage returns the error message, using verbose format when enabled.
+func getErrorMessage(err error, job CrawlJob, cfg Config) string {
+	if err == nil {
+		return ""
+	}
+	if cfg.VerboseNetwork {
+		return formatVerboseError(err, job, cfg)
+	}
+	return err.Error()
+}
 type Config struct {
 	StartURL        string        // The starting URL for the crawl
 	Concurrency     int           // Number of concurrent workers (default 17)
@@ -70,6 +159,7 @@ type Config struct {
 	RetryPolicy     RetryPolicy   // Retry policy for failed requests
 	MaxDepth        int           // Maximum crawl depth (0 = unlimited)
 	DisableAutoTune bool          // Disable adaptive rate limiting (use fixed rate from Delay)
+	VerboseNetwork  bool          // Enable verbose network error diagnostics
 }
 
 // CrawlJob represents a URL to be checked.
@@ -137,7 +227,7 @@ func CheckURL(ctx context.Context, client *http.Client, job CrawlJob, cfg Config
 				URL:           job.URL,
 				SourcePage:    job.SourcePage,
 				IsExternal:    true,
-				Error:         reqErr.Error(),
+				Error:         getErrorMessage(reqErr, job, cfg),
 				ErrorCategory: result.ClassifyError(reqErr, 0, false),
 			}
 			return
@@ -150,7 +240,7 @@ func CheckURL(ctx context.Context, client *http.Client, job CrawlJob, cfg Config
 				URL:           job.URL,
 				SourcePage:    job.SourcePage,
 				IsExternal:    true,
-				Error:         err.Error(),
+				Error:         getErrorMessage(err, job, cfg),
 				ErrorCategory: cat,
 			}
 			return
@@ -169,7 +259,7 @@ func CheckURL(ctx context.Context, client *http.Client, job CrawlJob, cfg Config
 					URL:           job.URL,
 					SourcePage:    job.SourcePage,
 					IsExternal:    true,
-					Error:         getErr.Error(),
+					Error:         getErrorMessage(getErr, job, cfg),
 					ErrorCategory: result.ClassifyError(getErr, 0, false),
 				}
 				return
@@ -184,7 +274,7 @@ func CheckURL(ctx context.Context, client *http.Client, job CrawlJob, cfg Config
 					URL:           job.URL,
 					SourcePage:    job.SourcePage,
 					IsExternal:    true,
-					Error:         err.Error(),
+					Error:         getErrorMessage(err, job, cfg),
 					ErrorCategory: cat,
 				}
 				return
@@ -225,7 +315,7 @@ func CheckURL(ctx context.Context, client *http.Client, job CrawlJob, cfg Config
 			URL:           job.URL,
 			SourcePage:    job.SourcePage,
 			IsExternal:    false,
-			Error:         reqErr.Error(),
+			Error:         getErrorMessage(reqErr, job, cfg),
 			ErrorCategory: result.ClassifyError(reqErr, 0, false),
 		}
 		return
@@ -238,7 +328,7 @@ func CheckURL(ctx context.Context, client *http.Client, job CrawlJob, cfg Config
 			URL:           job.URL,
 			SourcePage:    job.SourcePage,
 			IsExternal:    false,
-			Error:         err.Error(),
+			Error:         getErrorMessage(err, job, cfg),
 			ErrorCategory: cat,
 		}
 		return

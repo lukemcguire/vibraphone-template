@@ -21,6 +21,7 @@ type cliFlags struct {
 	concurrency     int
 	delay           int
 	disableAutoTune bool
+	verboseNetwork  bool
 	retries         int
 	retryDelay      time.Duration
 	userAgent       string
@@ -36,6 +37,7 @@ func parseFlags() *cliFlags {
 	flag.IntVar(&opts.concurrency, "concurrency", 10, "number of concurrent workers")
 	flag.IntVar(&opts.delay, "delay", 100, "delay between requests in milliseconds")
 	flag.BoolVar(&opts.disableAutoTune, "disable-auto-tune", false, "disable adaptive rate limiting (use fixed rate from --delay)")
+	flag.BoolVar(&opts.verboseNetwork, "verbose-network", false, "enable verbose network error diagnostics (DNS, timeout, connection details)")
 	flag.IntVar(&opts.retries, "retries", 2, "number of retries for transient errors")
 	flag.DurationVar(&opts.retryDelay, "retry-delay", time.Second, "base delay between retries")
 	flag.StringVar(&opts.userAgent, "user-agent", "zombiecrawl/1.0 (+https://github.com/lukemcguire/zombiecrawl)", "user agent string")
@@ -72,6 +74,7 @@ func buildCrawlerConfig(opts *cliFlags, rawURL string) crawler.Config {
 		RequestTimeout:  10 * time.Second,
 		Delay:           opts.delay,
 		DisableAutoTune: opts.disableAutoTune,
+		VerboseNetwork:  opts.verboseNetwork,
 		UserAgent:       opts.userAgent,
 		MaxDepth:        opts.depth,
 		RetryPolicy: crawler.RetryPolicy{
