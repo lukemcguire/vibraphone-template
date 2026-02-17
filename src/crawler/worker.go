@@ -2,6 +2,7 @@ package crawler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -43,6 +44,34 @@ func CheckURL(ctx context.Context, client *http.Client, job CrawlJob, cfg Config
 	reqCtx, cancel := context.WithTimeout(ctx, cfg.RequestTimeout)
 	defer cancel()
 
+	// Track redirect loop detection
+	var isRedirectLoop bool
+	var visitedInChain []string
+
+	// Create per-request client with redirect loop detection
+	loopClient := &http.Client{
+		Timeout: cfg.RequestTimeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			currentURL := req.URL.String()
+
+			// Check if we've seen this URL in the current chain
+			for _, v := range visitedInChain {
+				if v == currentURL {
+					isRedirectLoop = true
+					return http.ErrUseLastResponse
+				}
+			}
+			visitedInChain = append(visitedInChain, currentURL)
+
+			// Also limit total redirects (10 is Go default)
+			if len(via) >= 10 {
+				isRedirectLoop = true
+				return errors.New("stopped after 10 redirects")
+			}
+			return nil
+		},
+	}
+
 	var resp *http.Response
 	var err error
 
@@ -51,21 +80,24 @@ func CheckURL(ctx context.Context, client *http.Client, job CrawlJob, cfg Config
 		req, reqErr := http.NewRequestWithContext(reqCtx, http.MethodHead, job.URL, nil)
 		if reqErr != nil {
 			res.Result = &result.LinkResult{
-				URL:        job.URL,
-				SourcePage: job.SourcePage,
-				IsExternal: true,
-				Error:      reqErr.Error(),
+				URL:           job.URL,
+				SourcePage:    job.SourcePage,
+				IsExternal:    true,
+				Error:         reqErr.Error(),
+				ErrorCategory: result.ClassifyError(reqErr, 0, false),
 			}
 			return
 		}
 
-		resp, err = client.Do(req)
+		resp, err = loopClient.Do(req)
 		if err != nil {
+			cat := result.ClassifyError(err, 0, isRedirectLoop)
 			res.Result = &result.LinkResult{
-				URL:        job.URL,
-				SourcePage: job.SourcePage,
-				IsExternal: true,
-				Error:      err.Error(),
+				URL:           job.URL,
+				SourcePage:    job.SourcePage,
+				IsExternal:    true,
+				Error:         err.Error(),
+				ErrorCategory: cat,
 			}
 			return
 		}
@@ -80,20 +112,26 @@ func CheckURL(ctx context.Context, client *http.Client, job CrawlJob, cfg Config
 			getReq, getErr := http.NewRequestWithContext(reqCtx, http.MethodGet, job.URL, nil)
 			if getErr != nil {
 				res.Result = &result.LinkResult{
-					URL:        job.URL,
-					SourcePage: job.SourcePage,
-					IsExternal: true,
-					Error:      getErr.Error(),
+					URL:           job.URL,
+					SourcePage:    job.SourcePage,
+					IsExternal:    true,
+					Error:         getErr.Error(),
+					ErrorCategory: result.ClassifyError(getErr, 0, false),
 				}
 				return
 			}
-			resp, err = client.Do(getReq)
+			// Reset loop detection for new request
+			isRedirectLoop = false
+			visitedInChain = nil
+			resp, err = loopClient.Do(getReq)
 			if err != nil {
+				cat := result.ClassifyError(err, 0, isRedirectLoop)
 				res.Result = &result.LinkResult{
-					URL:        job.URL,
-					SourcePage: job.SourcePage,
-					IsExternal: true,
-					Error:      err.Error(),
+					URL:           job.URL,
+					SourcePage:    job.SourcePage,
+					IsExternal:    true,
+					Error:         err.Error(),
+					ErrorCategory: cat,
 				}
 				return
 			}
@@ -106,12 +144,18 @@ func CheckURL(ctx context.Context, client *http.Client, job CrawlJob, cfg Config
 
 		// Check status for external link
 		status := resp.StatusCode
-		if status >= 400 {
+		if status >= 400 || isRedirectLoop {
+			errMsg := ""
+			if isRedirectLoop {
+				errMsg = "redirect loop detected"
+			}
 			res.Result = &result.LinkResult{
-				URL:        job.URL,
-				StatusCode: status,
-				SourcePage: job.SourcePage,
-				IsExternal: true,
+				URL:           job.URL,
+				StatusCode:    status,
+				SourcePage:    job.SourcePage,
+				IsExternal:    true,
+				Error:         errMsg,
+				ErrorCategory: result.ClassifyError(nil, status, isRedirectLoop),
 			}
 			return
 		}
@@ -124,21 +168,24 @@ func CheckURL(ctx context.Context, client *http.Client, job CrawlJob, cfg Config
 	req, reqErr := http.NewRequestWithContext(reqCtx, http.MethodGet, job.URL, nil)
 	if reqErr != nil {
 		res.Result = &result.LinkResult{
-			URL:        job.URL,
-			SourcePage: job.SourcePage,
-			IsExternal: false,
-			Error:      reqErr.Error(),
+			URL:           job.URL,
+			SourcePage:    job.SourcePage,
+			IsExternal:    false,
+			Error:         reqErr.Error(),
+			ErrorCategory: result.ClassifyError(reqErr, 0, false),
 		}
 		return
 	}
 
-	resp, err = client.Do(req)
+	resp, err = loopClient.Do(req)
 	if err != nil {
+		cat := result.ClassifyError(err, 0, isRedirectLoop)
 		res.Result = &result.LinkResult{
-			URL:        job.URL,
-			SourcePage: job.SourcePage,
-			IsExternal: false,
-			Error:      err.Error(),
+			URL:           job.URL,
+			SourcePage:    job.SourcePage,
+			IsExternal:    false,
+			Error:         err.Error(),
+			ErrorCategory: cat,
 		}
 		return
 	}
@@ -149,12 +196,18 @@ func CheckURL(ctx context.Context, client *http.Client, job CrawlJob, cfg Config
 	}()
 
 	status := resp.StatusCode
-	if status >= 400 {
+	if status >= 400 || isRedirectLoop {
+		errMsg := ""
+		if isRedirectLoop {
+			errMsg = "redirect loop detected"
+		}
 		res.Result = &result.LinkResult{
-			URL:        job.URL,
-			StatusCode: status,
-			SourcePage: job.SourcePage,
-			IsExternal: false,
+			URL:           job.URL,
+			StatusCode:    status,
+			SourcePage:    job.SourcePage,
+			IsExternal:    false,
+			Error:         errMsg,
+			ErrorCategory: result.ClassifyError(nil, status, isRedirectLoop),
 		}
 		return
 	}
