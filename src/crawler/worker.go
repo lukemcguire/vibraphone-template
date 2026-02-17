@@ -276,7 +276,16 @@ func CheckURL(ctx context.Context, client *http.Client, job CrawlJob, cfg Config
 	// Extract links from the response body
 	links, extractErr := ExtractLinks(resp.Body, resp.Request.URL)
 	if extractErr != nil {
+		// Malformed HTML - create a broken link result with appropriate category
 		res.Err = fmt.Errorf("extract links from %s: %w", job.URL, extractErr)
+		res.Result = &result.LinkResult{
+			URL:           job.URL,
+			StatusCode:    status,
+			SourcePage:    job.SourcePage,
+			IsExternal:    false,
+			Error:         res.Err.Error(),
+			ErrorCategory: result.CategoryMalformedHTML,
+		}
 		res.Links = []string{}
 		return
 	}

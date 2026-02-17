@@ -16,6 +16,7 @@ const (
 	CategoryDNSFailure        ErrorCategory = "dns_failure"
 	CategoryConnectionRefused ErrorCategory = "connection_refused"
 	CategoryAuthRequired      ErrorCategory = "auth_required"
+	CategoryMalformedHTML     ErrorCategory = "malformed_html"
 	Category4xx               ErrorCategory = "4xx"
 	Category5xx               ErrorCategory = "5xx"
 	CategoryRedirectLoop      ErrorCategory = "redirect_loop"
@@ -87,6 +88,8 @@ func FormatCategory(cat ErrorCategory) string {
 		return "Connection Refused"
 	case CategoryAuthRequired:
 		return "Requires Authentication"
+	case CategoryMalformedHTML:
+		return "Malformed HTML"
 	case Category4xx:
 		return "Client Errors (4xx)"
 	case Category5xx:

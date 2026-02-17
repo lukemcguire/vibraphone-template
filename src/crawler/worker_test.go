@@ -1,8 +1,14 @@
 package crawler
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/lukemcguire/zombiecrawl/result"
 )
 
 func TestIsBinaryContentType(t *testing.T) {
@@ -84,5 +90,51 @@ func TestDefaultConfig(t *testing.T) {
 	}
 	if cfg.RequestTimeout != 10*time.Second {
 		t.Errorf("RequestTimeout = %v, want 10s", cfg.RequestTimeout)
+	}
+}
+
+// TestCheckURLMalformedHTML verifies that pages with malformed HTML that fails
+// to parse are classified as broken links with CategoryMalformedHTML.
+func TestCheckURLMalformedHTML(t *testing.T) {
+	// Create a server that returns HTML with unparseable URLs
+	// The html tokenizer is very tolerant, so we need to trigger errors
+	// in the URL parsing/normalization phase
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		// Use a URL with a newline character which will fail normalization
+		// (url.Parse accepts it but the URL is invalid)
+		html := `<html><body><a href="http://example` + "\n" + `.com/page">Link</a></body></html>`
+		if _, err := w.Write([]byte(html)); err != nil {
+			t.Errorf("failed to write response: %v", err)
+		}
+	}))
+	defer ts.Close()
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	cfg := DefaultConfig(ts.URL)
+	job := CrawlJob{
+		URL:        ts.URL,
+		SourcePage: "",
+		IsExternal: false,
+	}
+
+	res := CheckURL(context.Background(), client, job, cfg)
+
+	// Should have a LinkResult indicating malformed HTML
+	if res.Result == nil {
+		t.Fatal("expected LinkResult for malformed HTML, got nil")
+	}
+
+	if res.Result.ErrorCategory != result.CategoryMalformedHTML {
+		t.Errorf("ErrorCategory = %v, want %v", res.Result.ErrorCategory, result.CategoryMalformedHTML)
+	}
+
+	if !strings.Contains(res.Result.Error, "parse errors") {
+		t.Errorf("Error = %q, want to contain 'parse errors'", res.Result.Error)
+	}
+
+	// Should have no extracted links
+	if len(res.Links) != 0 {
+		t.Errorf("Links = %v, want empty", res.Links)
 	}
 }
