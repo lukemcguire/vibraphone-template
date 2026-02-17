@@ -1,3 +1,4 @@
+// Package main provides the zombiecrawl CLI entrypoint.
 package main
 
 import (

@@ -1,3 +1,4 @@
+// Package result contains crawl result types and error classification helpers.
 package result
 
 import (

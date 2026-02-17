@@ -1,3 +1,4 @@
+// Package tui renders the terminal UI for crawl progress and results.
 package tui
 
 import (
