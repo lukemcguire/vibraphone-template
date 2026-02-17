@@ -187,8 +187,8 @@ func TestCheckURLWithRetry_ContextCancellation(t *testing.T) {
 
 func TestShouldRetry_NetworkErrors(t *testing.T) {
 	tests := []struct {
-		name       string
-		result     CrawlResult
+		name        string
+		result      CrawlResult
 		shouldRetry bool
 	}{
 		{

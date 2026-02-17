@@ -10,12 +10,26 @@ import (
 )
 
 var (
-	titleStyle   = lipgloss.NewStyle().Bold(true)
-	successStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("10"))
-	errorStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("9"))
-	headerStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
-	dimStyle     = lipgloss.NewStyle().Faint(true)
+	titleStyle       = lipgloss.NewStyle().Bold(true)
+	successStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("10"))
+	errorStyle       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("9"))
+	headerStyle      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
+	categoryStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("11"))
+	dimStyle         = lipgloss.NewStyle().Faint(true)
+	urlStyle         = lipgloss.NewStyle()
+	statusErrorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
 )
+
+// categoryOrder defines the display order for error categories (most to least actionable).
+var categoryOrder = []result.ErrorCategory{
+	result.Category4xx,
+	result.Category5xx,
+	result.CategoryTimeout,
+	result.CategoryDNSFailure,
+	result.CategoryConnectionRefused,
+	result.CategoryRedirectLoop,
+	result.CategoryUnknown,
+}
 
 // RenderSummary produces a Lip Gloss styled summary of crawl results.
 func RenderSummary(res *result.Result) string {
@@ -37,29 +51,56 @@ func RenderSummary(res *result.Result) string {
 		return builder.String()
 	}
 
-	// Build table rows.
-	rows := make([][]string, 0, len(res.BrokenLinks))
+	// Group broken links by error category
+	grouped := make(map[result.ErrorCategory][]result.LinkResult)
 	for _, link := range res.BrokenLinks {
-		status := fmt.Sprintf("%d", link.StatusCode)
-		if link.Error != "" {
-			status = link.Error
+		cat := link.ErrorCategory
+		if cat == "" {
+			cat = result.CategoryUnknown
 		}
-		rows = append(rows, []string{link.URL, status, link.SourcePage})
+		grouped[cat] = append(grouped[cat], link)
 	}
 
-	resultsTable := table.New().
-		Border(lipgloss.RoundedBorder()).
-		Headers("URL", "Status", "Found On").
-		StyleFunc(func(row, col int) lipgloss.Style {
-			if row == table.HeaderRow {
-				return headerStyle
-			}
-			return errorStyle
-		}).
-		Rows(rows...)
+	// Display each category in order
+	for _, cat := range categoryOrder {
+		links, exists := grouped[cat]
+		if !exists || len(links) == 0 {
+			continue
+		}
 
-	builder.WriteString(resultsTable.Render())
-	builder.WriteString("\n\n")
+		// Category header
+		builder.WriteString(categoryStyle.Render(fmt.Sprintf("## %s (%d)", result.FormatCategory(cat), len(links))))
+		builder.WriteString("\n")
+
+		// Build table for this category
+		rows := make([][]string, 0, len(links))
+		for _, link := range links {
+			status := fmt.Sprintf("%d", link.StatusCode)
+			if link.Error != "" {
+				status = link.Error
+			}
+			rows = append(rows, []string{link.URL, status, link.SourcePage})
+		}
+
+		catTable := table.New().
+			Border(lipgloss.RoundedBorder()).
+			Headers("URL", "Status", "Found On").
+			StyleFunc(func(row, col int) lipgloss.Style {
+				if row == table.HeaderRow {
+					return headerStyle
+				}
+				if col == 1 { // Status column
+					return statusErrorStyle
+				}
+				return urlStyle
+			}).
+			Rows(rows...)
+
+		builder.WriteString(catTable.Render())
+		builder.WriteString("\n\n")
+	}
+
+	// Summary stats
 	builder.WriteString(titleStyle.Render(fmt.Sprintf(
 		"Found %d broken links out of %d URLs checked (%s)",
 		res.Stats.BrokenCount,

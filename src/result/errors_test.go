@@ -8,53 +8,53 @@ import (
 
 func TestClassifyError(t *testing.T) {
 	tests := []struct {
-		name          string
-		err           error
-		statusCode    int
+		name           string
+		err            error
+		statusCode     int
 		isRedirectLoop bool
-		want          ErrorCategory
+		want           ErrorCategory
 	}{
 		{
-			name:          "redirect loop",
-			err:           nil,
-			statusCode:    0,
+			name:           "redirect loop",
+			err:            nil,
+			statusCode:     0,
 			isRedirectLoop: true,
-			want:          CategoryRedirectLoop,
+			want:           CategoryRedirectLoop,
 		},
 		{
-			name:          "4xx status",
-			err:           nil,
-			statusCode:    404,
+			name:           "4xx status",
+			err:            nil,
+			statusCode:     404,
 			isRedirectLoop: false,
-			want:          Category4xx,
+			want:           Category4xx,
 		},
 		{
-			name:          "5xx status",
-			err:           nil,
-			statusCode:    500,
+			name:           "5xx status",
+			err:            nil,
+			statusCode:     500,
 			isRedirectLoop: false,
-			want:          Category5xx,
+			want:           Category5xx,
 		},
 		{
-			name:          "timeout error",
-			err:           context.DeadlineExceeded,
-			statusCode:    0,
+			name:           "timeout error",
+			err:            context.DeadlineExceeded,
+			statusCode:     0,
 			isRedirectLoop: false,
-			want:          CategoryTimeout,
+			want:           CategoryTimeout,
 		},
 		{
-			name:          "no error no status",
-			err:           nil,
-			statusCode:    0,
+			name:           "no error no status",
+			err:            nil,
+			statusCode:     0,
 			isRedirectLoop: false,
-			want:          CategoryUnknown,
+			want:           CategoryUnknown,
 		},
 		{
-			name:          "3xx status is unknown",
-			err:           nil,
-			statusCode:    301,
+			name:           "3xx status is unknown",
+			err:            nil,
+			statusCode:     301,
 			isRedirectLoop: false,
-			want:          CategoryUnknown,
+			want:           CategoryUnknown,
 		},
 	}
 
