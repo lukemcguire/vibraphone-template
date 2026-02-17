@@ -17,6 +17,7 @@ type Config struct {
 	RequestTimeout time.Duration // Per-request timeout (default 10s)
 	RateLimit      int           // Requests per second (default 10)
 	UserAgent      string        // HTTP User-Agent header (default "zombiecrawl/1.0")
+	RetryPolicy    RetryPolicy   // Retry policy for failed requests
 }
 
 // CrawlJob represents a URL to be checked.
@@ -232,5 +233,6 @@ func DefaultConfig(startURL string) Config {
 		RequestTimeout: 10 * time.Second,
 		RateLimit:      10,
 		UserAgent:      "zombiecrawl/1.0 (+https://github.com/lukemcguire/zombiecrawl)",
+		RetryPolicy:    DefaultRetryPolicy(),
 	}
 }

@@ -46,6 +46,9 @@ func New(cfg Config, progressCh chan<- CrawlEvent) *Crawler {
 	if cfg.UserAgent == "" {
 		cfg.UserAgent = "zombiecrawl/1.0 (+https://github.com/lukemcguire/zombiecrawl)"
 	}
+	if cfg.RetryPolicy.MaxRetries == 0 {
+		cfg.RetryPolicy = DefaultRetryPolicy()
+	}
 
 	limiter := rate.NewLimiter(rate.Limit(cfg.RateLimit), cfg.RateLimit)
 
@@ -102,7 +105,7 @@ func (c *Crawler) Run(ctx context.Context) (*result.Result, error) {
 						results <- CrawlResult{Job: job}
 						return fmt.Errorf("rate limiter wait: %w", waitErr)
 					}
-					crawlResult := CheckURL(groupCtx, c.client, job, c.cfg)
+					crawlResult := CheckURLWithRetry(groupCtx, c.client, job, c.cfg, c.cfg.RetryPolicy)
 					// Always send result - coordinator must receive it to call pendingJobs.Done()
 					results <- crawlResult
 				case <-groupCtx.Done():
