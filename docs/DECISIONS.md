@@ -66,3 +66,31 @@ Each ADR follows this structure:
   team with the same compatibility guarantees as the standard library. Using the
   tokenizer directly gives fine-grained control over parsing without the overhead
   of a full DOM tree.
+
+## ADR-004: Use golang.org/x/time/rate for Rate Limiting
+
+- **Date:** 2026-02-17
+- **Status:** Accepted
+- **Context:** The crawler needs to limit request rate to avoid overwhelming
+  target servers. The two main options are: (1) implement a custom token bucket,
+  or (2) use golang.org/x/time/rate which provides a well-tested implementation.
+- **Decision:** Use golang.org/x/time/rate.Limiter for request rate limiting.
+- **Consequences:** Adds one dependency from the official Go x repository. The
+  rate.Limiter provides a token bucket implementation with context-aware waiting,
+  burst support, and proper cancellation handling. This is a minimal dependency
+  with the same stability guarantees as the standard library.
+
+## ADR-005: Use golang.org/x/sync/errgroup for Goroutine Lifecycle
+
+- **Date:** 2026-02-17
+- **Status:** Accepted
+- **Context:** The crawler's worker pool needs structured goroutine management
+  with proper cancellation propagation and error handling. Options include: (1)
+  raw goroutines with manual WaitGroup management, or (2) golang.org/x/sync/errgroup
+  which provides structured concurrency with built-in context cancellation.
+- **Decision:** Use golang.org/x/sync/errgroup for managing worker goroutines.
+- **Consequences:** Adds one dependency from the official Go x repository. errgroup
+  ensures all workers terminate on context cancellation and provides a single
+  point to wait for all goroutines to complete. The trade-off is slightly more
+  complex coordination with the existing WaitGroup for job tracking, but it
+  guarantees deterministic goroutine lifecycle management.

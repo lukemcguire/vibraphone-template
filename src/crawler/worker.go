@@ -14,6 +14,8 @@ type Config struct {
 	StartURL       string        // The starting URL for the crawl
 	Concurrency    int           // Number of concurrent workers (default 17)
 	RequestTimeout time.Duration // Per-request timeout (default 10s)
+	RateLimit      int           // Requests per second (default 10)
+	UserAgent      string        // HTTP User-Agent header (default "zombiecrawl/1.0")
 }
 
 // CrawlJob represents a URL to be checked.
@@ -175,5 +177,7 @@ func DefaultConfig(startURL string) Config {
 		StartURL:       startURL,
 		Concurrency:    17,
 		RequestTimeout: 10 * time.Second,
+		RateLimit:      10,
+		UserAgent:      "zombiecrawl/1.0 (+https://github.com/lukemcguire/zombiecrawl)",
 	}
 }
