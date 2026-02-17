@@ -138,3 +138,61 @@ func TestCheckURLMalformedHTML(t *testing.T) {
 		t.Errorf("Links = %v, want empty", res.Links)
 	}
 }
+
+// TestCheckURLVerboseNetwork tests that verbose network diagnostics are
+// included in error messages when VerboseNetwork is enabled.
+func TestCheckURLVerboseNetwork(t *testing.T) {
+	// Create a server that will timeout
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(2 * time.Second) // Sleep longer than client timeout
+	}))
+	defer ts.Close()
+
+	client := &http.Client{Timeout: 100 * time.Millisecond}
+	cfg := DefaultConfig(ts.URL)
+	cfg.VerboseNetwork = true // Enable verbose network diagnostics
+	cfg.RequestTimeout = 100 * time.Millisecond
+
+	job := CrawlJob{
+		URL:        ts.URL,
+		SourcePage: "",
+		IsExternal: false,
+	}
+
+	res := CheckURL(context.Background(), client, job, cfg)
+
+	if res.Result == nil {
+		t.Fatal("expected LinkResult for timeout, got nil")
+	}
+
+	// With verbose enabled, the error should include timeout context
+	// e.g., "Request timed out after 100ms"
+	if !strings.Contains(strings.ToLower(res.Result.Error), "timed out") {
+		t.Errorf("Error = %q, want to contain 'timed out'", res.Result.Error)
+	}
+
+	// Verbose errors should include duration information
+	if !strings.Contains(res.Result.Error, "ms") && !strings.Contains(res.Result.Error, "s") {
+		t.Errorf("Error = %q, want to contain duration info (ms or s)", res.Result.Error)
+	}
+}
+
+// TestConfigVerboseNetworkField tests that the Config struct has a VerboseNetwork field.
+func TestConfigVerboseNetworkField(t *testing.T) {
+	cfg := Config{
+		StartURL:        "https://example.com",
+		VerboseNetwork:  true,
+		Concurrency:     10,
+		RequestTimeout:  10 * time.Second,
+	}
+
+	if !cfg.VerboseNetwork {
+		t.Error("VerboseNetwork should be true")
+	}
+
+	// Test default is false
+	defaultCfg := DefaultConfig("https://example.com")
+	if defaultCfg.VerboseNetwork {
+		t.Error("Default VerboseNetwork should be false")
+	}
+}
