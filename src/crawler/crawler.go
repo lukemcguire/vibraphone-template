@@ -1,3 +1,6 @@
+// Package crawler provides a concurrent web crawler for discovering broken links.
+// It implements BFS crawling with robots.txt compliance, rate limiting, and
+// progress event streaming.
 package crawler
 
 import (
@@ -17,14 +20,15 @@ import (
 
 // Crawler coordinates BFS link checking with a concurrent worker pool.
 type Crawler struct {
-	cfg        Config
-	client     *http.Client
-	limiter    *rate.Limiter
-	visited    sync.Map
-	results    []result.LinkResult
-	mu         sync.Mutex
-	total      int
-	progressCh chan<- CrawlEvent
+	cfg           Config
+	client        *http.Client
+	limiter       *rate.Limiter
+	robotsChecker *RobotsChecker
+	visited       sync.Map
+	results       []result.LinkResult
+	mu            sync.Mutex
+	total         int
+	progressCh    chan<- CrawlEvent
 }
 
 // New creates a Crawler with the given configuration.
@@ -45,11 +49,15 @@ func New(cfg Config, progressCh chan<- CrawlEvent) *Crawler {
 
 	limiter := rate.NewLimiter(rate.Limit(cfg.RateLimit), cfg.RateLimit)
 
+	// Separate client for robots.txt with shorter timeout
+	robotsClient := &http.Client{Timeout: 5 * time.Second}
+
 	return &Crawler{
-		cfg:        cfg,
-		client:     &http.Client{},
-		limiter:    limiter,
-		progressCh: progressCh,
+		cfg:           cfg,
+		client:        &http.Client{},
+		limiter:       limiter,
+		robotsChecker: NewRobotsChecker(robotsClient),
+		progressCh:    progressCh,
 	}
 }
 
@@ -71,7 +79,7 @@ func (c *Crawler) Run(ctx context.Context) (*result.Result, error) {
 	jobs := make(chan CrawlJob, c.cfg.Concurrency*3)
 	results := make(chan CrawlResult, c.cfg.Concurrency*3)
 
-	var wg sync.WaitGroup
+	var pendingJobs sync.WaitGroup
 
 	// Mark start URL as visited before enqueueing.
 	c.visited.Store(startURL, true)
@@ -94,11 +102,11 @@ func (c *Crawler) Run(ctx context.Context) (*result.Result, error) {
 						results <- CrawlResult{Job: job}
 						return fmt.Errorf("rate limiter wait: %w", waitErr)
 					}
-					cr := CheckURL(groupCtx, c.client, job, c.cfg)
-					// Always send result - coordinator must receive it to call wg.Done()
-					results <- cr
+					crawlResult := CheckURL(groupCtx, c.client, job, c.cfg)
+					// Always send result - coordinator must receive it to call pendingJobs.Done()
+					results <- crawlResult
 				case <-groupCtx.Done():
-					// Drain remaining jobs to ensure wg.Done() is called for each
+					// Drain remaining jobs to ensure pendingJobs.Done() is called for each
 					// Use non-blocking receive to avoid blocking forever
 					for {
 						select {
@@ -118,13 +126,27 @@ func (c *Crawler) Run(ctx context.Context) (*result.Result, error) {
 		})
 	}
 
+	// Check robots.txt for start URL before seeding the first job.
+	// Errors are treated as allow-all (fail-open) but we surface them via progress channel.
+	allowed, robotsErr := c.robotsChecker.Allowed(ctx, startURL, c.cfg.UserAgent)
+	if robotsErr != nil && c.progressCh != nil {
+		c.progressCh <- CrawlEvent{
+			URL:        startURL,
+			Error:      fmt.Sprintf("robots.txt check: %v", robotsErr),
+			IsExternal: false,
+		}
+	}
+	if !allowed {
+		return nil, fmt.Errorf("start URL %s is disallowed by robots.txt", startURL)
+	}
+
 	// Seed the first job.
-	wg.Add(1)
+	pendingJobs.Add(1)
 	jobs <- CrawlJob{URL: startURL, SourcePage: "", IsExternal: false}
 
 	// Close results channel when all work is done (managed via errgroup)
 	errGroup.Go(func() error {
-		wg.Wait()
+		pendingJobs.Wait()
 		close(results)
 		return nil
 	})
@@ -132,57 +154,78 @@ func (c *Crawler) Run(ctx context.Context) (*result.Result, error) {
 	// Coordinator: read results, enqueue discovered links.
 	// Process all results until channel closes - workers always send results
 	// so we don't need special cancellation handling here.
-	for cr := range results {
+	for crawlResult := range results {
 		c.mu.Lock()
 		c.total++
 		c.mu.Unlock()
 
-		if cr.Result != nil {
+		if crawlResult.Result != nil {
 			c.mu.Lock()
-			c.results = append(c.results, *cr.Result)
+			c.results = append(c.results, *crawlResult.Result)
 			c.mu.Unlock()
 		}
 
 		if c.progressCh != nil {
 			evt := CrawlEvent{
-				URL:        cr.Job.URL,
-				IsExternal: cr.Job.IsExternal,
+				URL:        crawlResult.Job.URL,
+				IsExternal: crawlResult.Job.IsExternal,
 				Checked:    c.total,
 			}
-			if cr.Result != nil {
-				evt.StatusCode = cr.Result.StatusCode
-				evt.Error = cr.Result.Error
+			if crawlResult.Result != nil {
+				evt.StatusCode = crawlResult.Result.StatusCode
+				evt.Error = crawlResult.Result.Error
 				c.mu.Lock()
 				evt.Broken = len(c.results)
 				c.mu.Unlock()
-			} else if cr.Err != nil {
-				evt.Error = cr.Err.Error()
+			} else if crawlResult.Err != nil {
+				evt.Error = crawlResult.Err.Error()
 			}
 			c.progressCh <- evt
 		}
 
 		// Enqueue discovered links from internal pages (skip if context cancelled)
-		if !cr.Job.IsExternal && ctx.Err() == nil {
+		if !crawlResult.Job.IsExternal && ctx.Err() == nil {
 			startHost := hostFromURL(startURL)
-			for _, link := range cr.Links {
+			for _, link := range crawlResult.Links {
 				normalized, normErr := urlutil.Normalize(link)
 				if normErr != nil {
+					// Surface normalization errors via progress channel
+					if c.progressCh != nil {
+						c.progressCh <- CrawlEvent{
+							URL:        link,
+							Error:      fmt.Sprintf("normalize URL: %v", normErr),
+							IsExternal: false,
+						}
+					}
 					continue
 				}
 				if _, loaded := c.visited.LoadOrStore(normalized, true); loaded {
 					continue
 				}
+				// Check robots.txt before enqueueing.
+				// Errors are treated as allow-all (fail-open) but we surface them via progress channel.
+				allowed, robotsErr := c.robotsChecker.Allowed(ctx, normalized, c.cfg.UserAgent)
+				if robotsErr != nil && c.progressCh != nil {
+					c.progressCh <- CrawlEvent{
+						URL:        normalized,
+						Error:      fmt.Sprintf("robots.txt check: %v", robotsErr),
+						IsExternal: false,
+					}
+				}
+				if !allowed {
+					continue // Skip disallowed URLs
+				}
 				isExternal := !urlutil.IsSameDomain(normalized, startHost)
-				wg.Add(1)
+				pendingJobs.Add(1)
 				jobs <- CrawlJob{
 					URL:        normalized,
-					SourcePage: cr.Job.URL,
+					SourcePage: crawlResult.Job.URL,
 					IsExternal: isExternal,
 				}
 			}
 		}
 
-		wg.Done()
+		pendingJobs.Done()
 	}
 
 	close(jobs)

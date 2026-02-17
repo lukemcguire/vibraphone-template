@@ -63,18 +63,22 @@ C4Component
         Component(main, "main", "Go", "CLI entry point, wires TUI to crawler")
         Component(tuipkg, "tui", "Go", "Bubble Tea model with live progress and Lip Gloss summary")
         Component(crawler, "crawler", "Go", "Concurrent crawl engine with worker pool")
+        Component(robots, "crawler/robots", "Go", "RobotsChecker with 1-hour cache for robots.txt compliance")
         Component(events, "crawler/events", "Go", "Progress event types for TUI integration")
         Component(extract, "crawler/extract", "Go", "HTML tokenizer-based link extraction")
         Component(urlutil, "urlutil", "Go", "URL filtering, normalization, domain checks")
         Component(result, "result", "Go", "Link result types and output formatting")
     }
+    System_Ext(target, "Target Website", "Serves HTML pages and robots.txt over HTTP/HTTPS")
     Rel(main, tuipkg, "Creates Model, runs tea.Program")
     Rel(tuipkg, crawler, "Starts crawl via tea.Cmd")
     Rel(tuipkg, events, "Reads CrawlEvent from progress channel")
     Rel(tuipkg, result, "Renders styled summary from Result")
     Rel(crawler, events, "Emits progress events")
+    Rel(crawler, robots, "Checks URL allowability before enqueueing")
     Rel(crawler, extract, "Extracts links from pages")
     Rel(crawler, urlutil, "Filters and classifies URLs")
+    Rel(robots, target, "Fetches robots.txt per host")
     Rel(extract, urlutil, "Normalizes discovered URLs")
     Rel(crawler, result, "Produces link results")
 ```
@@ -127,10 +131,20 @@ classDiagram
         []LinkResult BrokenLinks
         CrawlStats Stats
     }
+    class RobotsChecker {
+        *http.Client client
+        sync.Map cache
+        Duration cacheTTL
+    }
+    class cachedRobots {
+        *RobotsData data
+        Time fetchedAt
+    }
     CrawlResult --> CrawlJob
     CrawlResult --> LinkResult
     Result --> LinkResult
     Result --> CrawlStats
+    RobotsChecker --> cachedRobots
 ```
 
 ---
@@ -176,4 +190,45 @@ sequenceDiagram
     TUI->>TUI: View() → RenderSummary (Lip Gloss styled table)
     TUI-->>M: finalModel via p.Run()
     M-->>U: Styled report + exit code
+```
+
+### Robots.txt Check Flow
+
+```mermaid
+sequenceDiagram
+    participant C as Crawler
+    participant R as RobotsChecker
+    participant Cache as sync.Map Cache
+    participant T as Target Website
+
+    C->>R: Allowed(ctx, url, userAgent)
+    R->>R: Parse URL, extract host
+    R->>Cache: Load(host)
+
+    alt Cache hit and valid TTL
+        Cache-->>R: cachedRobots{data, fetchedAt}
+        alt data is nil
+            R-->>C: true (allow all)
+        else data exists
+            R->>R: data.TestAgent(path, userAgent)
+            R-->>C: allowed/disallowed
+        end
+    else Cache miss or expired
+        R->>T: GET {scheme}://{host}/robots.txt
+        alt 404 or 5xx response
+            T-->>R: 404/5xx status
+            R->>Cache: Store(host, nil entry)
+            R-->>C: true (allow all)
+        else Network error
+            T--xR: timeout/connection error
+            R->>Cache: Store(host, nil entry)
+            R-->>C: true, error (fail-open)
+        else 2xx response
+            T-->>R: 200 OK with robots.txt body
+            R->>R: robotstxt.FromStatusAndBytes()
+            R->>Cache: Store(host, parsed data)
+            R->>R: robots.TestAgent(path, userAgent)
+            R-->>C: allowed/disallowed
+        end
+    end
 ```

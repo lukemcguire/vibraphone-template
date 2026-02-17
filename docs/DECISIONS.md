@@ -94,3 +94,22 @@ Each ADR follows this structure:
   point to wait for all goroutines to complete. The trade-off is slightly more
   complex coordination with the existing WaitGroup for job tracking, but it
   guarantees deterministic goroutine lifecycle management.
+
+## ADR-006: Use github.com/temoto/robotstxt for robots.txt Compliance
+
+- **Date:** 2026-02-17
+- **Status:** Accepted
+- **Context:** The crawler needs to respect robots.txt directives for ethical
+  crawling. Options include: (1) implement a custom parser, (2) use the
+  temoto/robotstxt library. A custom parser would need to handle the full
+  robots.txt specification including user-agent matching, allow/disallow rules,
+  crawl-delay, and sitemap directives.
+- **Decision:** Use github.com/temoto/robotstxt for robots.txt parsing and
+  compliance checking.
+- **Consequences:** Adds one third-party dependency. The library handles the
+  complexity of the robots.txt specification including edge cases like
+  case-insensitive matching, pattern wildcards, and multiple user-agent groups.
+  The trade-off is external dependency maintenance risk, but the library is
+  widely used (3000+ GitHub stars), actively maintained, and handles corner
+  cases that a custom implementation might miss. We wrap the library with our
+  own RobotsChecker type to provide caching and fail-open behavior.
