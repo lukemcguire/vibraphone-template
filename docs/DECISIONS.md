@@ -113,3 +113,36 @@ Each ADR follows this structure:
   widely used (3000+ GitHub stars), actively maintained, and handles corner
   cases that a custom implementation might miss. We wrap the library with our
   own RobotsChecker type to provide caching and fail-open behavior.
+
+## ADR-007: Disk-Backed Bloom Filter for URL Deduplication
+
+- **Date:** 2026-02-17
+- **Status:** Accepted
+- **Context:** The crawler needs to track visited URLs to avoid revisiting pages
+  during BFS crawling. The previous implementation used sync.Map for in-memory
+  tracking, which has unbounded memory growth proportional to unique URLs. For
+  production-scale crawls targeting 100,000+ pages, this can cause OOM errors.
+- **Decision:** Use a disk-backed bloom filter with memory-mapped file I/O for
+  URL deduplication. Dependencies: github.com/bits-and-blooms/bloom/v3 for the
+  bloom filter implementation and github.com/edsrzf/mmap-go for memory-mapped
+  file I/O.
+- **Consequences:** O(1) space and time complexity regardless of URL count.
+  Configured for 100K URLs with 0.1% false positive rate (~1 in 1000 URLs may
+  be incorrectly skipped). Memory-mapped file provides constant memory footprint
+  with OS-managed paging. Temp files are created in OS temp directory and
+  cleaned up on Close(). The trade-off is acceptable false positives for bounded
+  memory, and the bloom filter library handles optimal parameter calculation.
+
+## ADR-008: Memory Pressure Monitoring with SetMemoryLimit
+
+- **Date:** 2026-02-17
+- **Status:** Accepted
+- **Context:** For long-running crawls, the process may consume increasing memory.
+  Without monitoring, the OS may kill the process with OOM, losing all progress.
+- **Decision:** Implement memory pressure monitoring using runtime/debug.SetMemoryLimit
+  (Go 1.19+) and runtime.ReadMemStats for current memory statistics.
+- **Consequences:** No external dependencies required - uses native Go runtime
+  support. Provides warning level at 75% and critical level at 90% of memory
+  limit. Callback mechanism allows crawlers to adapt behavior. Default limit of
+  1GB for CLI tool (configurable). The soft limit means GC works harder before
+  OOM, but the process isn't killed by the OS.

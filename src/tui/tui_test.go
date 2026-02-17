@@ -12,12 +12,24 @@ import (
 	"github.com/lukemcguire/zombiecrawl/result"
 )
 
+// mustNewCrawler creates a crawler or fails the test.
+func mustNewCrawler(t *testing.T, cfg crawler.Config, progressCh chan<- crawler.CrawlEvent) *crawler.Crawler {
+	t.Helper()
+	c, err := crawler.New(cfg, progressCh)
+	if err != nil {
+		t.Fatalf("crawler.New() error: %v", err)
+	}
+	return c
+}
+
+// TestNewModel verifies that NewModel correctly stores all parameters in the
+// returned Model instance.
 func TestNewModel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	progressCh := make(chan crawler.CrawlEvent, 10)
-	cr := crawler.New(crawler.Config{
+	cr := mustNewCrawler(t, crawler.Config{
 		StartURL:       "https://example.com",
 		Concurrency:    2,
 		RequestTimeout: 5 * time.Second,
@@ -45,6 +57,8 @@ func TestNewModel(t *testing.T) {
 	}
 }
 
+// TestHasBrokenLinks verifies that HasBrokenLinks correctly reports the
+// presence of broken links in the result.
 func TestHasBrokenLinks(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -82,6 +96,8 @@ func TestHasBrokenLinks(t *testing.T) {
 	}
 }
 
+// TestGetResult verifies that GetResult returns the crawl result when
+// available.
 func TestGetResult(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -116,6 +132,8 @@ func TestGetResult(t *testing.T) {
 	}
 }
 
+// TestRenderSummary_NilResult verifies that RenderSummary handles nil results
+// gracefully.
 func TestRenderSummary_NilResult(t *testing.T) {
 	output := RenderSummary(nil)
 	if output == "" {
@@ -123,6 +141,8 @@ func TestRenderSummary_NilResult(t *testing.T) {
 	}
 }
 
+// TestRenderSummary_NoBrokenLinks verifies that RenderSummary shows a success
+// message when no broken links are found.
 func TestRenderSummary_NoBrokenLinks(t *testing.T) {
 	res := &result.Result{
 		BrokenLinks: []result.LinkResult{},
@@ -145,6 +165,8 @@ func TestRenderSummary_NoBrokenLinks(t *testing.T) {
 	}
 }
 
+// TestRenderSummary_WithBrokenLinks verifies that RenderSummary formats broken
+// links correctly in a table.
 func TestRenderSummary_WithBrokenLinks(t *testing.T) {
 	res := &result.Result{
 		BrokenLinks: []result.LinkResult{
@@ -172,12 +194,14 @@ func TestRenderSummary_WithBrokenLinks(t *testing.T) {
 	}
 }
 
+// TestInit_ReturnsBatchCmd verifies that Init returns a batch command for
+// starting the crawl and spinner.
 func TestInit_ReturnsBatchCmd(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	progressCh := make(chan crawler.CrawlEvent, 10)
-	crawlerInst := crawler.New(crawler.Config{
+	crawlerInst := mustNewCrawler(t, crawler.Config{
 		StartURL:       "https://example.com",
 		Concurrency:    1,
 		RequestTimeout: 5 * time.Second,
@@ -190,6 +214,8 @@ func TestInit_ReturnsBatchCmd(t *testing.T) {
 	}
 }
 
+// TestUpdate_CrawlProgressMsg verifies that Update handles crawl progress
+// messages and updates counters.
 func TestUpdate_CrawlProgressMsg(t *testing.T) {
 	model := Model{
 		progressCh: make(chan crawler.CrawlEvent, 10),
@@ -213,6 +239,8 @@ func TestUpdate_CrawlProgressMsg(t *testing.T) {
 	}
 }
 
+// TestUpdate_CrawlDoneMsg verifies that Update handles crawl completion and
+// stores the result.
 func TestUpdate_CrawlDoneMsg(t *testing.T) {
 	model := Model{}
 	res := &result.Result{
@@ -231,6 +259,7 @@ func TestUpdate_CrawlDoneMsg(t *testing.T) {
 	}
 }
 
+// TestUpdate_SpinnerTickMsg verifies that Update handles spinner tick messages.
 func TestUpdate_SpinnerTickMsg(t *testing.T) {
 	model := Model{}
 	// Send a spinner tick — should not panic and should return a command.
@@ -238,6 +267,7 @@ func TestUpdate_SpinnerTickMsg(t *testing.T) {
 	_ = updatedModel.(Model) // should not panic
 }
 
+// TestUpdate_WindowSizeMsg verifies that Update handles window resize messages.
 func TestUpdate_WindowSizeMsg(t *testing.T) {
 	model := Model{}
 	updatedModel, _ := model.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
@@ -248,6 +278,8 @@ func TestUpdate_WindowSizeMsg(t *testing.T) {
 	}
 }
 
+// TestView_InProgress verifies that View shows spinner and counters during
+// crawl.
 func TestView_InProgress(t *testing.T) {
 	model := Model{
 		checked: 3,
@@ -263,6 +295,8 @@ func TestView_InProgress(t *testing.T) {
 	}
 }
 
+// TestView_DoneWithResult verifies that View shows the summary when crawl
+// completes with results.
 func TestView_DoneWithResult(t *testing.T) {
 	model := Model{
 		done: true,
@@ -277,6 +311,8 @@ func TestView_DoneWithResult(t *testing.T) {
 	}
 }
 
+// TestView_DoneWithError verifies that View shows an error message when crawl
+// completes with an error.
 func TestView_DoneWithError(t *testing.T) {
 	model := Model{
 		done: true,
