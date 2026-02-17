@@ -98,11 +98,12 @@ Plans:
   2. Memory usage remains bounded on large crawls (10,000+ pages)
   3. Tool includes helpful error messages for common user mistakes
   4. Performance meets target of crawling 50+ pages/second on typical sites
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 05-01: TBD
-- [ ] 05-02: TBD
+- [ ] 05-01-PLAN.md — Bloom filter URL tracking and memory pressure monitoring
+- [ ] 05-02-PLAN.md — Edge case handling (binary files, auth pages, malformed HTML)
+- [ ] 05-03-PLAN.md — Adaptive rate limiting and CLI flag changes (--delay, --verbose-network)
 
 ## Progress
 
@@ -115,4 +116,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. Bubble Tea TUI | 0/2 | Planned | - |
 | 3. Politeness & Reliability | 0/4 | Planned | - |
 | 4. Configuration & Output | 0/2 | Not started | - |
-| 5. Production Polish | 0/2 | Not started | - |
+| 5. Production Polish | 0/3 | Planned | - |
