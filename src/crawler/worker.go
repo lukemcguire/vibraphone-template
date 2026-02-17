@@ -5,10 +5,60 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/lukemcguire/zombiecrawl/result"
 )
+
+// isBinaryContentType returns true if the content type indicates a binary file
+// that should not be parsed for links (images, PDFs, videos, audio, archives, fonts).
+func isBinaryContentType(contentType string) bool {
+	// Normalize: lowercase and strip charset/parameters
+	contentType = strings.ToLower(strings.TrimSpace(contentType))
+	if idx := strings.Index(contentType, ";"); idx != -1 {
+		contentType = strings.TrimSpace(contentType[:idx])
+	}
+
+	// Check image types
+	if strings.HasPrefix(contentType, "image/") {
+		return true
+	}
+
+	// Check video types
+	if strings.HasPrefix(contentType, "video/") {
+		return true
+	}
+
+	// Check audio types
+	if strings.HasPrefix(contentType, "audio/") {
+		return true
+	}
+
+	// Check font types
+	if strings.HasPrefix(contentType, "font/") {
+		return true
+	}
+
+	// Check specific binary application types
+	binaryTypes := []string{
+		"application/pdf",
+		"application/zip",
+		"application/x-zip-compressed",
+		"application/gzip",
+		"application/vnd.rar",
+		"application/x-7z-compressed",
+		"application/octet-stream",
+	}
+
+	for _, bt := range binaryTypes {
+		if contentType == bt {
+			return true
+		}
+	}
+
+	return false
+}
 
 // Config holds crawler configuration.
 type Config struct {
@@ -212,6 +262,14 @@ func CheckURL(ctx context.Context, client *http.Client, job CrawlJob, cfg Config
 			Error:         errMsg,
 			ErrorCategory: result.ClassifyError(nil, status, isRedirectLoop),
 		}
+		return
+	}
+
+	// Check if this is a binary content type - skip parsing if so
+	contentType := resp.Header.Get("Content-Type")
+	if isBinaryContentType(contentType) {
+		// Binary files are valid but have no links to extract
+		res.Links = []string{}
 		return
 	}
 
