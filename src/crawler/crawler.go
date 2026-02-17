@@ -46,7 +46,7 @@ func New(cfg Config, progressCh chan<- CrawlEvent) *Crawler {
 	if cfg.UserAgent == "" {
 		cfg.UserAgent = "zombiecrawl/1.0 (+https://github.com/lukemcguire/zombiecrawl)"
 	}
-	if cfg.RetryPolicy.MaxRetries == 0 {
+	if cfg.RetryPolicy.MaxRetries < 0 {
 		cfg.RetryPolicy = DefaultRetryPolicy()
 	}
 
