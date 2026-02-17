@@ -82,11 +82,12 @@ Plans:
   2. User can get JSON output via --json flag
   3. User can get CSV output via --csv flag
   4. Structured output includes all link details (URL, status, source page, error type)
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 04-01: TBD
-- [ ] 04-02: TBD
+- [ ] 04-01-PLAN.md — Depth control (CrawlJob.Depth, Config.MaxDepth, coordinator tracking)
+- [ ] 04-02-PLAN.md — JSON and CSV output formatters (output.go, JSON tags)
+- [ ] 04-03-PLAN.md — CLI integration (flags, validation, file output)
 
 ### Phase 5: Production Polish
 **Goal**: Edge case handling and refinements for reliable production use
