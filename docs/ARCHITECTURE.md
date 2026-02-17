@@ -59,7 +59,7 @@ Internal structure per container.
 ```mermaid
 C4Component
     title Component Diagram — ZombieCrawl
-    Container_Boundary(app, "ZombiesCrawl CLI") {
+    Container_Boundary(app, "ZombieCrawl CLI") {
         Component(main, "main", "Go", "CLI entry point, wires TUI to crawler")
         Component(tuipkg, "tui", "Go", "Bubble Tea model with live progress and Lip Gloss summary")
         Component(crawler, "crawler", "Go", "Concurrent crawl engine with worker pool")
